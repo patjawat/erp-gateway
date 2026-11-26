@@ -31,11 +31,13 @@ docker compose exec gateway /usr/local/bin/gateway setup-code
 
 ตั้งบัญชีผู้ดูแล ที่อยู่ HTTPS เดิม ปลายทางที่อนุญาต และใบรับรอง เมื่อเปิดใช้งานแล้วเข้า `/admin/` ผ่านที่อยู่ที่ตั้งไว้ ดู [WEB_SETUP.md](deploy/gateway/WEB_SETUP.md) ต้องมีใบ client ที่ CA ปลายทางเชื่อถือ หรือส่ง CSR ให้ CA เดิมลงนามแล้วนำใบกลับเข้า Gateway การลงนามและต่ออายุอัตโนมัติยังไม่รองรับ
 
-Compose ใช้ project `erp-mobile-gateway-workspace` และ volumes แยก `gateway-workspace-data`/`gateway-workspace-config` จึงไม่ย้ายหรือใช้ข้อมูล production เดิม หากไม่ใช้ `.env` หรือไม่กำหนดพอร์ต ค่าเริ่มต้นของ Compose ยังเป็น `127.0.0.1:8080` สามารถกำหนดพอร์ตเฉพาะคำสั่งได้:
+Compose ใช้ project `erp-gateway` และ volumes แยก `gateway-workspace-data`/`gateway-workspace-config` จึงไม่ย้ายหรือใช้ข้อมูล production เดิม หากไม่ใช้ `.env` หรือไม่กำหนดพอร์ต ค่าเริ่มต้นของ Compose ยังเป็น `127.0.0.1:8080` สามารถกำหนดพอร์ตเฉพาะคำสั่งได้:
 
 ```bash
 GATEWAY_PORT=18080 docker compose up -d
 ```
+
+หากเคยรัน root Compose ด้วย project `erp-mobile-gateway-workspace` การเปลี่ยนชื่อเป็น `erp-gateway` จะใช้ volumes ชุดใหม่ ไม่ย้ายข้อมูลและการตั้งค่าเดิมให้อัตโนมัติ ระหว่างที่ยังไม่ได้ย้ายข้อมูล ให้คง project เดิมด้วย `COMPOSE_PROJECT_NAME=erp-mobile-gateway-workspace` เมื่อใช้คำสั่ง Compose และเก็บ volumes เดิมไว้
 
 หยุดด้วย `docker compose stop` ข้อมูลคงอยู่ใน volumes เก็บ volumes และ encryption key เดิมไว้เมื่อต้องอัปเกรด
 

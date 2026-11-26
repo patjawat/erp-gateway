@@ -1,4 +1,4 @@
-name: erp-mobile-gateway-workspace
+name: erp-gateway
 
 services:
   gateway:
