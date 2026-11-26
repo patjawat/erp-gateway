@@ -2,6 +2,7 @@ name: erp-gateway
 
 services:
   gateway:
+    container_name: erp-gateway
     image: ${GATEWAY_IMAGE:-erp-platform/gateway:workspace}
     build:
       context: .

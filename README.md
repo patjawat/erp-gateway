@@ -39,6 +39,12 @@ GATEWAY_PORT=18080 docker compose up -d
 
 หากเคยรัน root Compose ด้วย project `erp-mobile-gateway-workspace` การเปลี่ยนชื่อเป็น `erp-gateway` จะใช้ volumes ชุดใหม่ ไม่ย้ายข้อมูลและการตั้งค่าเดิมให้อัตโนมัติ ระหว่างที่ยังไม่ได้ย้ายข้อมูล ให้คง project เดิมด้วย `COMPOSE_PROJECT_NAME=erp-mobile-gateway-workspace` เมื่อใช้คำสั่ง Compose และเก็บ volumes เดิมไว้
 
+ชื่อ container ที่แสดงใน `docker ps` กำหนดเป็น `erp-gateway` ส่วนคำสั่ง Compose ยังใช้ชื่อ service `gateway` เช่น `docker compose logs gateway` ชื่อ container นี้ใช้ได้เพียงหนึ่งตัวต่อ Docker host หากใช้ project `erp-gateway` อยู่แล้วและต้องการให้ container เดิมเปลี่ยนชื่อหลังดึงโค้ดล่าสุด ให้รันคำสั่งต่อไปนี้ ซึ่งจะ recreate container และใช้ volumes เดิม:
+
+```bash
+docker compose up -d --no-build --pull never gateway
+```
+
 หยุดด้วย `docker compose stop` ข้อมูลคงอยู่ใน volumes เก็บ volumes และ encryption key เดิมไว้เมื่อต้องอัปเกรด
 
 ## Dev บน Mac โดยไม่ใช้ Docker
