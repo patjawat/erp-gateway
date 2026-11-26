@@ -67,6 +67,41 @@ Trusted proxy ต้องเป็น CIDR แบบ canonical ที่แค�
 
 หาก config/key ถูกแก้จากภายนอกระหว่าง runtime ทำงาน เว็บจะไม่เขียนทับเงียบ ๆ ต้องตรวจและ restart อย่างปลอดภัยก่อน ระบบ legacy ที่ยังใช้ env อย่างเดียวต้องนำเข้าระบบถาวรก่อนจึงจะแก้และ export ผ่านเว็บได้
 
+## รหัสผ่านผู้ดูแลและกรณีลืมรหัสผ่าน
+
+รหัสผ่าน Admin สำหรับเข้าเว็บ Gateway เป็นคนละค่ากับ setup code และรหัสผ่าน CA บน Mac ไฟล์ [.env.example](../../.env.example) แสดง `GATEWAY_ADMIN_PASSWORD=` ว่างไว้เพื่ออธิบายตัวเลือกของโหมดเดิม การติดตั้งปกติให้ตั้งรหัสในหน้า Setup
+
+| วิธีติดตั้ง | รหัสผ่านที่ระบบใช้ | ผลของ `GATEWAY_ADMIN_PASSWORD` ใน `.env` |
+|---|---|---|
+| ตั้งค่าและเปิดใช้งานผ่านเว็บแล้ว | Password verifier ใน `runtime.json` ของ config volume | ไม่เปลี่ยนรหัสผ่านที่บันทึกแล้ว |
+| Legacy ที่ตั้งค่าผ่าน environment และยังไม่มี `runtime.json` | `GATEWAY_ADMIN_PASSWORD` ที่ส่งให้ container | ใช้ตั้งรหัสผ่านของโหมด legacy |
+
+### ลืมรหัสผ่านของบัญชีที่ตั้งค่าผ่านเว็บ
+
+รุ่นปัจจุบัน **ยังไม่มีปุ่มหรือคำสั่งรีเซ็ตรหัสผ่าน Admin** สำหรับระบบที่เปิดใช้งานผ่านเว็บแล้ว การรีเซ็ตโดยคงข้อมูลเดิมต้องพัฒนาและตรวจสอบเครื่องมือเปลี่ยน password verifier เฉพาะบัญชีก่อน จึงยังไม่มีคำสั่งพร้อมใช้ในคู่มือนี้
+
+- เก็บ data/config volumes, `runtime.json`, encryption key และใบรับรอง/private key เดิมไว้ ไม่ลบ volume หรือไฟล์ตั้งค่าเพื่อเปิด Setup ใหม่
+- เปลี่ยน `GATEWAY_ADMIN_PASSWORD` ใน `.env` ไม่มีผลกับ password verifier ที่บันทึกแล้ว
+- เปลี่ยน `SETUP=true` ไม่เปิด Setup ทับระบบ active และ `setup-code` ไม่ใช่รหัสผ่าน Admin; คำสั่งนี้จะปฏิเสธระบบที่ตั้งค่าเสร็จแล้ว
+- ไฟล์ recovery เก็บ password verifier เดิมไว้ การ restore จึงใช้รหัสผ่านที่ตรงกับ backup นั้น ไม่ได้ตั้งรหัสผ่านใหม่ หากยังจำรหัสผ่านใน backup ได้ ต้องกู้คืนตามข้อกำหนด config/key/database ในหัวข้อถัดไป
+
+ระหว่างที่ยังเข้า Admin ได้ ให้เก็บรหัสผ่านใน password manager และสำรอง config/ฐานข้อมูลตามคู่มือ การสำรองข้อมูลช่วยกู้ระบบ แต่ไม่แสดงหรือถอดรหัสผ่าน Admin กลับมาเป็นข้อความ
+
+### เปลี่ยนหรือตั้งรหัสใหม่ในโหมด legacy
+
+ใช้ขั้นตอนนี้เฉพาะระบบที่ยังอาศัย environment และยังไม่มี `runtime.json` การมีตัวแปรนี้ใน `.env` อย่างเดียวไม่ได้หมายความว่าระบบยังเป็น legacy
+
+1. แก้ `GATEWAY_ADMIN_PASSWORD` ใน `.env` บนเครื่อง Gateway เป็นรหัสผ่านใหม่อย่างน้อย 16 ตัวอักษร ชื่อผู้ใช้ใช้ `GATEWAY_ADMIN_USERNAME` เดิม (ค่าเริ่มต้น `admin`)
+2. ใช้ Compose project, ไฟล์/overlays, volumes, encryption key และ certificate mounts ชุดเดิมทั้งหมด แล้ว recreate service เพื่อรับ environment ใหม่ ตัวอย่างเมื่อใช้ root Compose:
+
+   ```sh
+   docker compose up -d --no-build --pull never gateway
+   ```
+
+   หากใช้ไฟล์/overlays หรือ `-p` เฉพาะ ให้ใส่ตัวเลือกเดิมให้ครบ คำสั่ง `docker compose restart` อย่างเดียวไม่โหลดค่า `.env` ใหม่
+
+3. เข้าสู่ระบบด้วยชื่อผู้ใช้เดิมและรหัสผ่านใหม่ การเปลี่ยนเฉพาะรหัสผ่านและ recreate โดยใช้ volumes เดิมจะเก็บข้อมูลหน่วยงาน การตั้งค่า และใบรับรองเดิมไว้ ไม่ต้องสร้าง CA หรือ encryption key ใหม่
+
 ## ไฟล์กู้คืนที่เข้ารหัส
 
 ผู้ดูแล export จากเว็บโดยตั้ง passphrase แยกยาวอย่างน้อย 16 bytes ไม่ใช้ password ผู้ดูแลเป็นค่าปริยาย ไฟล์ schema `erp-gateway-recovery.v1` ใช้ AES-256-GCM พร้อม PBKDF2-HMAC-SHA256 600,000 iterations, salt/nonce สุ่มทุกครั้ง และ authentication tag ครอบคลุมข้อมูล ไฟล์ประกอบด้วย config, admin verifier, encryption key และ Gateway private identity/certificate ที่ใช้อยู่ภายใน ciphertext ไม่เก็บ passphrase และไม่รวม offline root CA key หรือฐานข้อมูล
