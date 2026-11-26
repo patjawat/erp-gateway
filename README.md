@@ -6,7 +6,7 @@ Gateway กลางรับคำขอจาก Mobile แล้วส่ง�
 gateway/
   backend/            Go Gateway, Admin API และระบบตั้งค่าครั้งแรก
   frontend/           Angular + Tailwind CSS
-  .env.example        คอนฟิกปกติเพียง SETUP=true
+  .env.example        เปิด/ปิด Setup และกำหนดพอร์ต
   .env.advanced.example ตัวเลือกพอร์ต/image/proxy สำหรับกรณีพิเศษ
   .env.lan.example    ตัวอย่าง LAN แบบเดียวกับชุดปกติ
   Dockerfile          build Angular แล้วฝัง static assets ใน Go image เดียว
@@ -22,7 +22,7 @@ gateway/
 docker compose up -d
 ```
 
-ค่าเริ่มต้นใช้พอร์ต `8080` บนทุก IPv4 interface ของเซิร์ฟเวอร์ ไม่ต้องกำหนด IP, URL, CIDR หรือ localhost proxy ก่อนเข้าเว็บ หากต้องการไฟล์ `.env` ให้คัดลอกด้วย `cp -n .env.example .env` ซึ่งมีเพียง `SETUP=true` และเก็บไฟล์เดิมไว้เมื่อมีอยู่แล้ว
+ค่าเริ่มต้นใช้พอร์ต `8080` บนทุก IPv4 interface ของเซิร์ฟเวอร์ ไม่ต้องกำหนด IP, URL, CIDR หรือ localhost proxy ก่อนเข้าเว็บ หากต้องการไฟล์ `.env` ให้คัดลอกด้วย `cp -n .env.example .env` ซึ่งมี `SETUP=true` และ `GATEWAY_PORT=8080` เปลี่ยนพอร์ตได้ตามต้องการ คำสั่งคัดลอกจะเก็บไฟล์เดิมไว้เมื่อมีอยู่แล้ว
 
 ครั้งแรกจะดาวน์โหลด dependencies และ build Angular/Go เปิด [หน้าตั้งค่าครั้งแรกในเครื่อง](http://localhost:8080/setup/) หรือ `http://IP-เซิร์ฟเวอร์:8080/setup/` จาก LAN/VPN แล้วอ่านรหัสอายุสั้นบนเซิร์ฟเวอร์:
 
