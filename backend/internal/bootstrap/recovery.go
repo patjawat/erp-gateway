@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"erp-platform/gateway/internal/webtransport"
 )
 
 const recoverySchema = "erp-gateway-recovery.v1"
@@ -183,6 +185,10 @@ func DecryptRecovery(ctx context.Context, archive []byte, passphrase string) (Re
 }
 
 func validateRecoveryPayload(p RecoveryPayload, validatePolicy func([]string, []string) error) ([]byte, error) {
+	return validateRecoveryPayloadWithPolicy(p, validatePolicy, webtransport.Policy{})
+}
+
+func validateRecoveryPayloadWithPolicy(p RecoveryPayload, validatePolicy func([]string, []string) error, policy webtransport.Policy) ([]byte, error) {
 	if p.Version != 1 || p.Config.Version != 1 || p.Config.AdminUsername == "" || p.Config.AdminUsername != strings.TrimSpace(p.Config.AdminUsername) || len(p.Config.AdminUsername) > 100 || strings.ContainsAny(p.Config.AdminUsername, "\r\n\t") || p.Config.PasswordIterations != passwordIterations {
 		return nil, errors.New("invalid recovery administrator configuration")
 	}
@@ -199,7 +205,7 @@ func validateRecoveryPayload(p RecoveryPayload, validatePolicy func([]string, []
 	if err != nil || len(key) != 32 {
 		return nil, errors.New("invalid recovery encryption key")
 	}
-	if err = validatePublicSettings(publicSettings(p.Config), validatePolicy); err != nil {
+	if err = validatePublicSettingsWithPolicy(publicSettings(p.Config), validatePolicy, policy); err != nil {
 		return nil, err
 	}
 	if _, err = ValidateIdentity([]byte(p.ClientCertificatePEM), []byte(p.ClientPrivateKeyPEM)); err != nil {
@@ -214,11 +220,17 @@ func validateRecoveryPayload(p RecoveryPayload, validatePolicy func([]string, []
 // RestoreRecovery writes only fixed file names in a NEW private directory.
 // A consistent DB backup must be restored separately; startup checks its key.
 func RestoreRecovery(ctx context.Context, archive []byte, passphrase, destination string, validatePolicy func([]string, []string) error) error {
+	return RestoreRecoveryWithPolicy(ctx, archive, passphrase, destination, validatePolicy, webtransport.Policy{})
+}
+
+// RestoreRecoveryWithPolicy requires the destination operator's transport opt-in
+// rather than allowing an imported archive to enable plaintext management.
+func RestoreRecoveryWithPolicy(ctx context.Context, archive []byte, passphrase, destination string, validatePolicy func([]string, []string) error, policy webtransport.Policy) error {
 	payload, err := DecryptRecovery(ctx, archive, passphrase)
 	if err != nil {
 		return err
 	}
-	key, err := validateRecoveryPayload(payload, validatePolicy)
+	key, err := validateRecoveryPayloadWithPolicy(payload, validatePolicy, policy)
 	if err != nil {
 		return err
 	}

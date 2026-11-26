@@ -24,6 +24,7 @@ import (
 	"erp-platform/gateway/internal/bootstrap"
 	"erp-platform/gateway/internal/gateway"
 	"erp-platform/gateway/internal/transportauth"
+	"erp-platform/gateway/internal/webtransport"
 )
 
 func env(key, fallback string) string {
@@ -47,6 +48,19 @@ func entries(key string) []string {
 	}
 	return result
 }
+
+func webPolicyFromEnvironment() (webtransport.Policy, error) {
+	allowLANHTTP, err := boolean("GATEWAY_ALLOW_LAN_HTTP", false)
+	if err != nil {
+		return webtransport.Policy{}, errors.New("invalid GATEWAY_ALLOW_LAN_HTTP: use true or false")
+	}
+	policy, err := webtransport.New(allowLANHTTP, entries("GATEWAY_LAN_HTTP_CIDRS"))
+	if err != nil {
+		return webtransport.Policy{}, fmt.Errorf("invalid GATEWAY_LAN_HTTP_CIDRS: %w", err)
+	}
+	return policy, nil
+}
+
 func fileExists(name string) bool {
 	_, err := os.Lstat(name)
 	return err == nil || !errors.Is(err, os.ErrNotExist)
@@ -56,6 +70,10 @@ func main() {
 	databasePath := env("GATEWAY_DATABASE_PATH", "data/gateway.db")
 	configDir := env("GATEWAY_CONFIG_DIR", "data/config")
 	if len(os.Args) == 4 && os.Args[1] == "restore-config" {
+		webPolicy, err := webPolicyFromEnvironment()
+		if err != nil {
+			log.Fatal(err)
+		}
 		f, err := os.Open(os.Args[2])
 		if err != nil {
 			log.Fatal("cannot read recovery archive")
@@ -76,7 +94,7 @@ func main() {
 			log.Fatal("cannot read recovery passphrase from standard input")
 		}
 		passphrase = strings.TrimSuffix(strings.TrimSuffix(passphrase, "\n"), "\r")
-		if err = bootstrap.RestoreRecovery(context.Background(), archive, passphrase, os.Args[3], gateway.ValidateUpstreamPolicy); err != nil {
+		if err = bootstrap.RestoreRecoveryWithPolicy(context.Background(), archive, passphrase, os.Args[3], gateway.ValidateUpstreamPolicy, webPolicy); err != nil {
 			log.Fatal("recovery refused: ", err)
 		}
 		fmt.Println("Gateway configuration restored into a new private directory; restore the matching consistent database backup separately")
@@ -99,11 +117,16 @@ func main() {
 		return
 	}
 	if len(os.Args) == 2 && os.Args[1] == "setup-code" {
+		webPolicy, err := webPolicyFromEnvironment()
+		if err != nil {
+			log.Fatal(err)
+		}
 		if cfg, key, err := bootstrap.LoadRuntime(configDir); err == nil && bootstrap.CheckDatabaseKey(databasePath, key) == nil {
+			_, urlErr := webPolicy.ValidateURL(cfg.PublicURL)
 			certPEM, certErr := os.ReadFile(cfg.ClientCertFile)
 			keyPEM, keyErr := os.ReadFile(cfg.ClientKeyFile)
 			_, identityErr := bootstrap.ValidateIdentity(certPEM, keyPEM)
-			if certErr == nil && keyErr == nil && identityErr == nil && gateway.ValidateUpstreamPolicy(cfg.ApprovedUpstreams, cfg.PrivateUpstreamCIDRs) == nil {
+			if urlErr == nil && certErr == nil && keyErr == nil && identityErr == nil && gateway.ValidateUpstreamPolicy(cfg.ApprovedUpstreams, cfg.PrivateUpstreamCIDRs) == nil {
 				log.Fatal("Gateway is configured; use the authenticated administrator interface")
 			}
 		}
@@ -125,6 +148,10 @@ func main() {
 	legacySecure, err := boolean("GATEWAY_COOKIE_SECURE", true)
 	if err != nil {
 		log.Fatal("invalid GATEWAY_COOKIE_SECURE")
+	}
+	webPolicy, err := webPolicyFromEnvironment()
+	if err != nil {
+		log.Fatal(err)
 	}
 	var manager *bootstrap.Manager
 	management := &gateway.ManagementState{}
@@ -160,7 +187,7 @@ func main() {
 				return bootstrap.Runtime{}, err
 			}
 		}
-		cfg := gateway.Config{Store: store, AdminUsername: c.AdminUsername, CookieSecure: true, TrustedProxyCIDRs: c.TrustedProxyCIDRs, ApprovedUpstreams: c.ApprovedUpstreams, PrivateUpstreamCIDRs: c.PrivateUpstreamCIDRs, NotificationSender: sender, GatewayClientCert: &clientCert, HospitalServerRoots: hospitalRoots, Management: management}
+		cfg := gateway.Config{Store: store, AdminUsername: c.AdminUsername, PublicURL: c.PublicURL, WebPolicy: webPolicy, CookieSecure: !webPolicy.IsLANHTTPURL(c.PublicURL), TrustedProxyCIDRs: c.TrustedProxyCIDRs, ApprovedUpstreams: c.ApprovedUpstreams, PrivateUpstreamCIDRs: c.PrivateUpstreamCIDRs, NotificationSender: sender, GatewayClientCert: &clientCert, HospitalServerRoots: hospitalRoots, Management: management}
 		if c.Version == 1 {
 			cfg.AdminPasswordVerifier = c.VerifyPassword
 			cfg.IdentityDirectory = filepath.Join(configDir, "csr")
@@ -232,7 +259,7 @@ func main() {
 			log.Print("legacy encryption key is invalid; local recovery is available and no replacement key was generated")
 		}
 	}
-	manager, err = bootstrap.New(bootstrap.Options{Directory: configDir, DatabasePath: databasePath, PublicSetupURL: os.Getenv("GATEWAY_SETUP_PUBLIC_URL"), TrustedProxyCIDRs: entries("GATEWAY_TRUSTED_PROXY_CIDRS"), LocalSetupCIDRs: entries("GATEWAY_SETUP_LOCAL_PROXY_CIDRS"), Build: build, ValidatePolicy: gateway.ValidateUpstreamPolicy, Assets: admin.LegacyHandler(), Legacy: legacy})
+	manager, err = bootstrap.New(bootstrap.Options{Directory: configDir, DatabasePath: databasePath, PublicSetupURL: os.Getenv("GATEWAY_SETUP_PUBLIC_URL"), WebPolicy: webPolicy, TrustedProxyCIDRs: entries("GATEWAY_TRUSTED_PROXY_CIDRS"), LocalSetupCIDRs: entries("GATEWAY_SETUP_LOCAL_PROXY_CIDRS"), Build: build, ValidatePolicy: gateway.ValidateUpstreamPolicy, Assets: admin.LegacyHandler(), Legacy: legacy})
 	if err != nil {
 		if legacy != nil && legacy.Close != nil {
 			legacy.Close()

@@ -84,6 +84,62 @@ describe("management workflows", () => {
     expect(api.expire).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, false])(
+    "keeps HTTP disabled when the LAN capability is %s",
+    (lan_http_enabled) => {
+      const { settings } = setup();
+      settings.data.set({ ...saved, lan_http_enabled });
+      settings.open("settings");
+      settings.draft.public_url = "http://10.10.8.127:8080";
+      settings.review();
+      expect(settings.reviewing()).toBe(false);
+      expect(settings.modalError()).toContain("HTTPS");
+    },
+  );
+
+  it.each([
+    "http://10.10.8.127:8080",
+    "http://172.16.0.10:8080/",
+    "http://192.168.1.10",
+    "http://[fd00::127]:8080",
+    "http://[fc00::1]",
+  ])("reviews private HTTP only with the server LAN capability: %s", (url) => {
+    const { settings } = setup();
+    settings.data.set({ ...saved, lan_http_enabled: true });
+    settings.open("settings");
+    settings.draft.public_url = url;
+    settings.review();
+    expect(settings.modalError()).toBe("");
+    expect(settings.reviewing()).toBe(true);
+  });
+
+  it.each([
+    "http://8.8.8.8:8080",
+    "http://172.15.0.10",
+    "http://172.32.0.10",
+    "http://localhost:8080",
+    "http://gateway.example.org",
+    "http://[2001:db8::1]",
+    "http://0x0a0a087f:8080",
+    "http://168429695:8080",
+    "http://10.10.8.127:8080/setup/",
+    "http://user:password@10.10.8.127:8080",
+    "http://10.10.8.127:8080?next=admin",
+    "http://10.10.8.127:8080#admin",
+    "http://10.10.8.127:0",
+    "https://gateway.example.org/setup/",
+    "https:/gateway.example.org",
+    "https://gateway.example.org/./",
+  ])("rejects unsupported Gateway URLs even in LAN mode: %s", (url) => {
+    const { settings } = setup();
+    settings.data.set({ ...saved, lan_http_enabled: true });
+    settings.open("settings");
+    settings.draft.public_url = url;
+    settings.review();
+    expect(settings.reviewing()).toBe(false);
+    expect(settings.modalError()).not.toBe("");
+  });
+
   it("treats Go nil settings slices as empty lists without inventing a change", () => {
     const { settings } = setup();
     settings.data.set({

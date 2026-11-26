@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -23,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"erp-platform/gateway/internal/webtransport"
 
 	"golang.org/x/sys/unix"
 )
@@ -41,6 +44,7 @@ type Options struct {
 	DatabasePath      string
 	PublicSetupURL    string
 	TrustedProxyCIDRs []string
+	WebPolicy         webtransport.Policy
 	LocalSetupCIDRs   []string
 	Build             func(RuntimeConfig, []byte) (Runtime, error)
 	ValidatePolicy    func([]string, []string) error
@@ -83,8 +87,8 @@ func New(options Options) (*Manager, error) {
 		return nil, err
 	}
 	if options.PublicSetupURL != "" {
-		if _, err := publicURL(options.PublicSetupURL); err != nil {
-			return nil, err
+		if _, err := options.WebPolicy.ValidateURL(options.PublicSetupURL); err != nil {
+			return nil, fmt.Errorf("invalid GATEWAY_SETUP_PUBLIC_URL: %w", err)
 		}
 	}
 	for _, value := range append(append([]string{}, options.TrustedProxyCIDRs...), options.LocalSetupCIDRs...) {
@@ -123,7 +127,7 @@ func New(options Options) (*Manager, error) {
 }
 
 func (m *Manager) validateStored(c RuntimeConfig, key []byte) error {
-	if _, err := publicURL(c.PublicURL); err != nil {
+	if _, err := m.options.WebPolicy.ValidateURL(c.PublicURL); err != nil {
 		return err
 	}
 	cert, err := readBounded(c.ClientCertFile, 256<<10)
@@ -189,7 +193,16 @@ func (m *Manager) Close() {
 func (m *Manager) Status() any {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return map[string]any{"state": m.state, "public_url": m.config.PublicURL, "persistent": m.config.Version == 1, "issuer_configured": false}
+	return map[string]any{"state": m.state, "public_url": m.gatewayURL(), "lan_http_enabled": m.options.WebPolicy.LANHTTPEnabled(), "persistent": m.config.Version == 1, "issuer_configured": false}
+}
+
+// gatewayURL is read with m.mu held; the initial setup URL is useful before a
+// runtime has been activated and never contains credentials.
+func (m *Manager) gatewayURL() string {
+	if m.config.PublicURL != "" {
+		return m.config.PublicURL
+	}
+	return m.options.PublicSetupURL
 }
 
 func (m *Manager) Handler() http.Handler { return http.HandlerFunc(m.serveHTTP) }
@@ -211,14 +224,19 @@ func (m *Manager) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	active := current != nil
 	state := m.state
+	gatewayURL := m.gatewayURL()
 	m.mu.Unlock()
 	if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
 		jsonData(w, map[string]any{"status": "ok", "state": state})
 		return
 	}
 	if active {
+		if m.options.WebPolicy.IsLANHTTPURL(gatewayURL) && !m.options.WebPolicy.AllowsLANRequest(r, gatewayURL) {
+			jsonError(w, 403, "LOCAL_SETUP_REQUIRED", "เปิดหน้าตั้งค่าจาก IP และเครือข่ายภายในที่ผู้ดูแลกำหนดไว้")
+			return
+		}
 		if r.URL.Path == "/setup/api/status" && r.Method == http.MethodGet {
-			jsonData(w, map[string]any{"state": "active", "authenticated": false, "existing_data": true})
+			jsonData(w, map[string]any{"state": "active", "authenticated": false, "existing_data": true, "public_url": gatewayURL, "lan_http_enabled": m.options.WebPolicy.LANHTTPEnabled()})
 		} else if strings.HasPrefix(r.URL.Path, "/setup/api/") {
 			jsonError(w, 410, "SETUP_CLOSED", "ตั้งค่าแล้ว กรุณาเข้าสู่ระบบผู้ดูแล")
 		} else {
@@ -235,7 +253,7 @@ func (m *Manager) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		session, ok := m.session(r)
-		data := map[string]any{"state": m.state, "reason": m.reason, "authenticated": ok, "existing_data": existingDatabase(m.options.DatabasePath), "code_command": "docker compose exec gateway /usr/local/bin/gateway setup-code"}
+		data := map[string]any{"state": m.state, "reason": m.reason, "authenticated": ok, "existing_data": existingDatabase(m.options.DatabasePath), "code_command": "docker compose exec gateway /usr/local/bin/gateway setup-code", "public_url": m.gatewayURL(), "lan_http_enabled": m.options.WebPolicy.LANHTTPEnabled()}
 		if ok {
 			data["csrf_token"] = session.csrf
 		}
@@ -270,6 +288,9 @@ func (m *Manager) serveHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Manager) allowedSetupRequest(r *http.Request) bool {
+	if m.options.WebPolicy.IsLANHTTPURL(m.options.PublicSetupURL) {
+		return m.options.WebPolicy.AllowsLANRequest(r, m.options.PublicSetupURL)
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
@@ -296,7 +317,7 @@ func (m *Manager) allowedSetupRequest(r *http.Request) bool {
 	if m.options.PublicSetupURL == "" {
 		return false
 	}
-	u, err := publicURL(m.options.PublicSetupURL)
+	u, err := m.options.WebPolicy.ValidateURL(m.options.PublicSetupURL)
 	if err != nil || r.Host != u.Host {
 		return false
 	}
@@ -316,6 +337,9 @@ func (m *Manager) allowedSetupRequest(r *http.Request) bool {
 }
 
 func (m *Manager) sameOrigin(r *http.Request) bool {
+	if m.options.WebPolicy.IsLANHTTPURL(m.options.PublicSetupURL) {
+		return m.options.WebPolicy.AllowsLANOrigin(r, m.options.PublicSetupURL)
+	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return false
@@ -469,7 +493,7 @@ func (m *Manager) configure(w http.ResponseWriter, r *http.Request, activate boo
 			in.ClientPrivateKeyPEM = string(body)
 		}
 	}
-	if err := validateInput(in); err != nil {
+	if err := validateInputWithPolicy(in, m.options.WebPolicy); err != nil {
 		jsonError(w, 400, "INVALID_SETUP", err.Error())
 		return
 	}
@@ -491,7 +515,11 @@ func (m *Manager) configure(w http.ResponseWriter, r *http.Request, activate boo
 		}
 	}
 	if !activate {
-		jsonData(w, map[string]any{"valid": true, "existing_data": existingDatabase(m.options.DatabasePath), "checks": []map[string]string{{"name": "admin", "status": "ready", "message": "พร้อมบันทึก password verifier"}, {"name": "https", "status": "ready", "message": "ใช้ HTTPS เดิมของ Gateway"}, {"name": "mtls", "status": "ready", "message": "ตรวจ key, chain, clientAuth และวันหมดอายุผ่าน"}, {"name": "hospital_connectivity", "status": "not_tested", "message": "ทดสอบกับหน่วยงานหลังเปิดใช้งาน ยังไม่ได้ตรวจ end-to-end"}}})
+		transport := "ใช้ HTTPS เดิมของ Gateway"
+		if m.options.WebPolicy.IsLANHTTPURL(in.PublicURL) {
+			transport = "ใช้ HTTP เฉพาะเครือข่ายภายในที่อนุญาต ข้อมูลรับส่งไม่เข้ารหัส"
+		}
+		jsonData(w, map[string]any{"valid": true, "existing_data": existingDatabase(m.options.DatabasePath), "checks": []map[string]string{{"name": "admin", "status": "ready", "message": "พร้อมบันทึก password verifier"}, {"name": "https", "status": "ready", "message": transport}, {"name": "mtls", "status": "ready", "message": "ตรวจ key, chain, clientAuth และวันหมดอายุผ่าน"}, {"name": "hospital_connectivity", "status": "not_tested", "message": "ทดสอบกับหน่วยงานหลังเปิดใช้งาน ยังไม่ได้ตรวจ end-to-end"}}})
 		return
 	}
 	unlock, err := lockDirectory(m.options.Directory)

@@ -7,6 +7,7 @@ gateway/
   backend/            Go Gateway, Admin API และระบบตั้งค่าครั้งแรก
   frontend/           Angular + Tailwind CSS
   .env.example        ตัวอย่างคอนฟิกสำหรับ Compose ที่ root
+  .env.lan.example    ตัวอย่าง HTTP สำหรับ LAN ที่เปิดโหมดนี้โดยชัดเจน
   Dockerfile          build Angular แล้วฝัง static assets ใน Go image เดียว
   docker-compose.yml  เริ่มจากซอร์สใน workspace
   deploy/gateway/     เครื่องมือ dev และการติดตั้งเดิม
@@ -29,7 +30,7 @@ docker compose up -d
 docker compose exec gateway /usr/local/bin/gateway setup-code
 ```
 
-ตั้งบัญชีผู้ดูแล ที่อยู่ HTTPS เดิม ปลายทางที่อนุญาต และใบรับรอง เมื่อเปิดใช้งานแล้วเข้า `/admin/` ผ่านที่อยู่ที่ตั้งไว้ ดู [WEB_SETUP.md](deploy/gateway/WEB_SETUP.md) ต้องมีใบ client ที่ CA ปลายทางเชื่อถือ หรือส่ง CSR ให้ CA เดิมลงนามแล้วนำใบกลับเข้า Gateway การลงนามและต่ออายุอัตโนมัติยังไม่รองรับ
+ตั้งบัญชีผู้ดูแล ที่อยู่ HTTPS เดิม ปลายทางที่อนุญาต และใบรับรอง เมื่อเปิดใช้งานแล้วเข้า `/admin/` ผ่านที่อยู่ที่ตั้งไว้ ดู [WEB_SETUP.md](deploy/gateway/WEB_SETUP.md) หากยังไม่มี SSL และใช้ภายใน LAN ให้ใช้โหมด HTTP ด้านล่าง ต้องมีใบ client ที่ CA ปลายทางเชื่อถือ หรือส่ง CSR ให้ CA เดิมลงนามแล้วนำใบกลับเข้า Gateway การลงนามและต่ออายุอัตโนมัติยังไม่รองรับ
 
 Compose ใช้ project `erp-gateway` และ volumes แยก `gateway-workspace-data`/`gateway-workspace-config` จึงไม่ย้ายหรือใช้ข้อมูล production เดิม หากไม่ใช้ `.env` หรือไม่กำหนดพอร์ต ค่าเริ่มต้นของ Compose ยังเป็น `127.0.0.1:8080` สามารถกำหนดพอร์ตเฉพาะคำสั่งได้:
 
@@ -46,6 +47,37 @@ docker compose up -d --no-build --pull never gateway
 ```
 
 หยุดด้วย `docker compose stop` ข้อมูลคงอยู่ใน volumes เก็บ volumes และ encryption key เดิมไว้เมื่อต้องอัปเกรด
+
+## HTTP ภายใน LAN โดยไม่มี SSL
+
+เปิดได้ทั้ง Setup และ Admin เมื่อระบุ opt-in และเครือข่ายเครื่องผู้ดูแล โดยข้อมูลระหว่างทางเป็น HTTP ที่ไม่เข้ารหัส ค่าเริ่มต้นของระบบยังใช้ HTTPS และการเชื่อมต่อไป API โรงพยาบาลยังใช้ HTTPS/mTLS
+
+ขั้นตอนนี้สำหรับการตั้งค่าครั้งแรก หรือระบบที่บันทึก URL แบบ HTTP ไว้แล้ว หากเปิดใช้ Gateway ด้วย URL แบบ HTTPS ไปแล้ว การแก้ `.env` ไม่เปลี่ยน URL ถาวร: ให้เปิดโหมด LAN และ build รุ่นใหม่ จากนั้นเข้าหน้า Settings ผ่าน HTTPS เดิมเพื่อเปลี่ยนที่อยู่ Gateway เป็น HTTP ก่อนย้ายมาเข้า LAN
+
+สำหรับเซิร์ฟเวอร์ `10.10.8.127` พอร์ต `8080` ให้แก้เฉพาะค่าต่อไปนี้ใน `.env` เดิม (มีตัวอย่างใน [.env.lan.example](.env.lan.example)):
+
+```env
+GATEWAY_PORT=8080
+GATEWAY_BIND_ADDRESS=10.10.8.127
+GATEWAY_ALLOW_LAN_HTTP=true
+GATEWAY_LAN_HTTP_CIDRS=10.10.8.0/24
+GATEWAY_SETUP_PUBLIC_URL=http://10.10.8.127:8080
+GATEWAY_TRUSTED_PROXY_CIDRS=
+```
+
+CIDR ต้องตรงกับ IP ต้นทางของเครื่องผู้ดูแลที่ Gateway เห็นจริง ตัวอย่างนี้ยอมรับเครื่องใน `10.10.8.0/24` เท่านั้น ใช้ IP/CIDR ภายในที่จำเป็น คั่นหลาย CIDR ด้วยจุลภาค ไม่เชื่อ `X-Forwarded-For` เพื่อข้าม allowlist และไม่ใช้ `GATEWAY_SETUP_LOCAL_PROXY_CIDRS` แทนค่านี้
+
+หลังดึงโค้ดรุ่นที่รองรับ LAN ให้ build image ใหม่ เพราะแก้ `.env` อย่างเดียวไม่เพิ่มความสามารถให้ image เดิม:
+
+```bash
+git pull --ff-only
+docker compose up -d --build gateway
+docker compose exec gateway /usr/local/bin/gateway setup-code
+```
+
+เปิด [Setup ผ่าน LAN](http://10.10.8.127:8080/setup/) แล้วกรอกที่อยู่ Gateway เป็น `http://10.10.8.127:8080` เมื่อเปิดใช้งานแล้วเข้า [Admin](http://10.10.8.127:8080/admin/) โหมดนี้ตั้ง cookie สำหรับ HTTP ให้อัตโนมัติ โดยยังใช้ HttpOnly, SameSite และ CSRF ไม่ต้องเปลี่ยน `GATEWAY_COOKIE_SECURE` เพื่อข้ามข้อกำหนด
+
+ต้องคง opt-in และ allowlist นี้เมื่อ restart หรือกู้คืน backup ของ HTTP config หากต้องการย้ายกลับ HTTPS ให้ตั้ง HTTPS/proxy ให้พร้อมแล้วแก้ URL ผ่านหน้า Settings ก่อนปิดโหมด LAN รักษา Compose project, volumes และ key เดิม
 
 ## Dev บน Mac โดยไม่ใช้ Docker
 

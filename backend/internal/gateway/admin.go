@@ -38,6 +38,9 @@ func (s *Server) adminAuth(w http.ResponseWriter, r *http.Request, mutation bool
 	return value, true
 }
 func (s *Server) sameOrigin(r *http.Request) bool {
+	if s.config.WebPolicy.IsLANHTTPURL(s.config.PublicURL) {
+		return s.config.WebPolicy.AllowsLANOrigin(r, s.config.PublicURL)
+	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true

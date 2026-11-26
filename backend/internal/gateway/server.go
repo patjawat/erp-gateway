@@ -22,6 +22,7 @@ import (
 
 	"erp-platform/gateway/internal/admin"
 	"erp-platform/gateway/internal/contracts"
+	"erp-platform/gateway/internal/webtransport"
 )
 
 type Config struct {
@@ -35,6 +36,8 @@ type Config struct {
 	ApplySettings         func(context.Context, RuntimeSettings) error
 	ExportRecovery        func(context.Context, string) ([]byte, error)
 	Management            *ManagementState
+	PublicURL             string
+	WebPolicy             webtransport.Policy
 	CookieSecure          bool
 	AllowHTTPUpstream     bool
 	TrustedProxyCIDRs     []string
@@ -73,6 +76,12 @@ func New(config Config) (*Server, error) {
 	}
 	if config.AdminUsername == "" || (config.AdminPasswordVerifier == nil && len(config.AdminPassword) < 16) {
 		return nil, errors.New("admin username and password of at least 16 characters are required")
+	}
+	if config.PublicURL != "" {
+		if _, err := config.WebPolicy.ValidateURL(config.PublicURL); err != nil {
+			return nil, err
+		}
+		config.CookieSecure = !config.WebPolicy.IsLANHTTPURL(config.PublicURL)
 	}
 	if config.GatewayClientCert != nil && config.AllowHTTPUpstream {
 		return nil, errors.New("Gateway client identity requires HTTPS upstreams")
@@ -219,6 +228,10 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		if (r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/")) && s.config.WebPolicy.IsLANHTTPURL(s.config.PublicURL) && !s.config.WebPolicy.AllowsLANRequest(r, s.config.PublicURL) {
+			fail(w, http.StatusForbidden, "LAN_HTTP_FORBIDDEN", "เข้า HTTP ผ่าน IP และเครือข่าย LAN ที่ผู้ดูแลอนุญาตโดยตรง")
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
 }

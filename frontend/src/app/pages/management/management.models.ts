@@ -31,6 +31,7 @@ export interface RuntimeSettings {
 export interface SettingsResponse {
   configured: boolean;
   editable: boolean;
+  lan_http_enabled?: boolean;
   settings: RuntimeSettings | null;
   message: string;
 }

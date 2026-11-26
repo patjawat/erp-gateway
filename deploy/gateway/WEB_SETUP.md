@@ -4,7 +4,7 @@
 
 ## เริ่มระบบใหม่
 
-1. เลือก image รุ่นที่ Jenkins build/test/publish แล้วใน `GATEWAY_IMAGE` หรือ preload image จาก release bundle
+1. ถ้า clone จากซอร์ส ให้ใช้ root Compose ตาม [README](../../README.md) เพื่อ build image รวม frontend/backend หากรับ image จาก registry ให้ใช้รุ่นที่ build/test แล้วใน `GATEWAY_IMAGE`
 2. ในโฟลเดอร์ที่มี `docker-compose.yml` รัน `docker compose up -d`
 3. เปิด `http://localhost:8080/setup/` บนเครื่อง Gateway ถ้าเข้าจากเครื่องอื่นให้ใช้ SSH tunnel มาที่พอร์ต loopback เดิม
 4. รัน `docker compose exec gateway /usr/local/bin/gateway setup-code` เพื่ออ่านรหัสอายุ 10 นาที ใช้ครั้งเดียว ไม่ใส่รหัสใน URL หรือ logs
@@ -13,7 +13,15 @@
 7. หรือเลือกนำเข้า identity เดิม โดยกรอก client certificate chain และ private key เดิมเฉพาะครั้งย้ายระบบ ไม่สร้าง CA root ใน Gateway
 8. ตรวจผลก่อนเปิดใช้งาน ใบผ่านการตรวจไม่ได้แปลว่าตรวจ end-to-end กับทุก Hospital แล้ว หลังเปิดใช้ให้ทดสอบหน่วยงานนำร่องก่อนอนุมัติ
 
-บัญชีผู้ดูแลเก็บเป็น PBKDF2-HMAC-SHA256 verifier ที่สุ่ม salt และใช้ 600,000 iterations ไม่เก็บรหัสผ่านจริงใน config การตั้งค่าบังคับ public URL เป็น HTTPS และ Admin cookie ของระบบแบบ persisted ใช้ Secure เสมอ หลังตั้งค่าผ่าน SSH/local HTTP ให้เข้าสู่ Admin ผ่าน HTTPS URL ที่ตั้งไว้
+บัญชีผู้ดูแลเก็บเป็น PBKDF2-HMAC-SHA256 verifier ที่สุ่ม salt และใช้ 600,000 iterations ไม่เก็บรหัสผ่านจริงใน config ค่าเริ่มต้นบังคับ public URL เป็น HTTPS และ Admin cookie ของระบบแบบ persisted ใช้ Secure หลังตั้งค่าผ่าน SSH/local HTTP ให้เข้าสู่ Admin ผ่าน HTTPS URL ที่ตั้งไว้ ยกเว้นโหมด HTTP LAN ที่เปิดอย่างชัดเจนตามหัวข้อด้านล่าง
+
+## HTTP LAN สำหรับเครื่องที่ไม่มี SSL
+
+Root Compose รองรับ `GATEWAY_ALLOW_LAN_HTTP=true` พร้อม `GATEWAY_LAN_HTTP_CIDRS` ที่ระบุเครือข่ายภายในของเครื่องผู้ดูแล ตัวอย่างทั้งหมดและคำสั่ง build อยู่ใน [README: HTTP ภายใน LAN](../../README.md#http-ภายใน-lan-โดยไม่มี-ssl) และ [.env.lan.example](../../.env.lan.example)
+
+ใช้ `GATEWAY_SETUP_PUBLIC_URL=http://10.10.8.127:8080` ได้เฉพาะเมื่อเปิดโหมดนี้ URL ต้องเป็น IP ภายในแบบ literal และคำขอ Setup/Admin ต้องมี Host/Origin ตรงกับ URL และ IP ต้นทางอยู่ใน CIDR ที่อนุญาต โหมดนี้ไม่ใช้ forwarded headers เพื่ออนุญาต peer เพิ่ม และข้อมูลระหว่างทางไม่เข้ารหัส Setup code, บัญชีผู้ดูแล, CSRF และ mTLS ไปยัง API ยังจำเป็นเช่นเดิม
+
+เมื่อใช้ HTTP cookie จะไม่มี Secure เพื่อให้ browser ส่งได้ แต่ยังเป็น HttpOnly และ SameSite=Strict โหมด HTTPS ยังใช้ Secure ต้องคง opt-in ตอนเริ่มระบบและ restore HTTP config การนำ config กลับมาใช้ไม่เปิด HTTP ให้เองโดยอัตโนมัติ
 
 ## Volumes และความปลอดภัย
 

@@ -9,6 +9,8 @@ import (
 	"net"
 	"path/filepath"
 	"strings"
+
+	"erp-platform/gateway/internal/webtransport"
 )
 
 // PublicSettings contains only the fields the authenticated settings form may edit.
@@ -27,10 +29,14 @@ func publicSettings(c RuntimeConfig) PublicSettings {
 }
 
 func validatePublicSettings(in PublicSettings, validatePolicy func([]string, []string) error) error {
+	return validatePublicSettingsWithPolicy(in, validatePolicy, webtransport.Policy{})
+}
+
+func validatePublicSettingsWithPolicy(in PublicSettings, validatePolicy func([]string, []string) error, policy webtransport.Policy) error {
 	if len(in.PublicURL) > 2048 || in.PublicURL != strings.TrimSpace(in.PublicURL) {
 		return errors.New("ตรวจสอบ HTTPS URL ของ Gateway")
 	}
-	if _, err := publicURL(in.PublicURL); err != nil {
+	if _, err := policy.ValidateURL(in.PublicURL); err != nil {
 		return err
 	}
 	if len(in.TrustedProxyCIDRs) > 32 || len(in.ApprovedUpstreams) > 10000 || len(in.PrivateUpstreamCIDRs) > 128 {
@@ -97,7 +103,7 @@ func (m *Manager) ApplySettings(ctx context.Context, in PublicSettings) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := validatePublicSettings(in, m.options.ValidatePolicy); err != nil {
+	if err := validatePublicSettingsWithPolicy(in, m.options.ValidatePolicy, m.options.WebPolicy); err != nil {
 		return err
 	}
 	m.mu.Lock()

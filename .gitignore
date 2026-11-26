@@ -3,6 +3,7 @@
 /.impeccable/
 .env.*
 !.env.example
+!.env.lan.example
 *.db
 *.db-shm
 *.db-wal

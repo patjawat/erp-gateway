@@ -20,9 +20,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
+
+	"erp-platform/gateway/internal/webtransport"
 
 	_ "modernc.org/sqlite"
 )
@@ -146,24 +147,18 @@ func readEncryptionKey(dir string) ([]byte, error) {
 }
 
 func publicURL(value string) (*url.URL, error) {
-	u, err := url.Parse(value)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || (u.Path != "" && u.Path != "/") || strings.ContainsAny(value, "\\\r\n") {
-		return nil, errors.New("ที่อยู่ Gateway ต้องเป็น HTTPS และไม่มี path, query หรือข้อมูลผู้ใช้")
-	}
-	if port := u.Port(); port != "" {
-		number, err := strconv.Atoi(port)
-		if err != nil || number < 1 || number > 65535 {
-			return nil, errors.New("พอร์ต HTTPS ของ Gateway ต้องอยู่ระหว่าง 1-65535")
-		}
-	}
-	return u, nil
+	return (webtransport.Policy{}).ValidateURL(value)
 }
 
 func validateInput(in Input) error {
+	return validateInputWithPolicy(in, webtransport.Policy{})
+}
+
+func validateInputWithPolicy(in Input, policy webtransport.Policy) error {
 	if in.AdminUsername == "" || in.AdminUsername != strings.TrimSpace(in.AdminUsername) || len(in.AdminUsername) > 100 || strings.ContainsAny(in.AdminUsername, "\r\n\t") || len(in.AdminPassword) < 16 || len(in.AdminPassword) > 4096 {
 		return errors.New("ระบุชื่อผู้ดูแลและรหัสผ่านอย่างน้อย 16 ตัวอักษร")
 	}
-	if _, err := publicURL(in.PublicURL); err != nil {
+	if _, err := policy.ValidateURL(in.PublicURL); err != nil {
 		return err
 	}
 	if len(in.TrustedProxyCIDRs) > 32 || len(in.ApprovedUpstreams) > 10000 || len(in.PrivateUpstreamCIDRs) > 128 {

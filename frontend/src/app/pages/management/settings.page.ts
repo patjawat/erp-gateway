@@ -13,11 +13,27 @@ type SettingsKey = keyof RuntimeSettings;
 type SettingsDraft = Record<SettingsKey, string>;
 
 const fields: { key: SettingsKey; label: string }[] = [
-  { key: "public_url", label: "ที่อยู่ HTTPS ของ Gateway" },
+  { key: "public_url", label: "ที่อยู่ Gateway" },
   { key: "approved_upstreams", label: "ปลายทาง API ที่อนุญาต" },
   { key: "private_upstream_cidrs", label: "เครือข่ายภายในของปลายทาง" },
   { key: "trusted_proxy_cidrs", label: "เครือข่าย Reverse proxy ที่เชื่อถือ" },
 ];
+
+function privateIPLiteral(host: string): boolean {
+  if (host.startsWith("[")) return /^\[f[cd][0-9a-f]{2}:/i.test(host);
+  const parts = host.split(".");
+  if (
+    parts.length !== 4 ||
+    parts.some((part) => !/^(0|[1-9]\d{0,2})$/.test(part) || Number(part) > 255)
+  )
+    return false;
+  const [first, second] = parts.map(Number);
+  return (
+    first === 10 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
+}
 
 @Component({
   selector: "gw-settings-page",
@@ -140,6 +156,10 @@ export class SettingsPage implements OnInit, OnDestroy {
       : value || "ไม่ได้กำหนด";
   }
 
+  lanHTTPEnabled(): boolean {
+    return this.data()?.lan_http_enabled === true;
+  }
+
   open(kind: "settings" | "recovery"): void {
     const data = this.data();
     if (!data?.editable || !data.settings) return;
@@ -211,19 +231,34 @@ export class SettingsPage implements OnInit, OnDestroy {
   review(): void {
     this.modalError.set("");
     try {
-      const url = new URL(this.draft.public_url.trim());
+      const value = this.draft.public_url.trim();
+      const url = new URL(value);
+      const authority = value.match(
+        /^https?:\/\/(\[[^\]]+\]|[^:/?#]+)(?::\d+)?\/?$/i,
+      )?.[1];
+      const allowedHTTP =
+        this.lanHTTPEnabled() &&
+        url.protocol === "http:" &&
+        !!authority &&
+        privateIPLiteral(authority);
       if (
-        url.protocol !== "https:" ||
+        (url.protocol !== "https:" && !allowedHTTP) ||
+        !authority ||
         !url.hostname ||
         url.username ||
         url.password ||
+        url.pathname !== "/" ||
         url.search ||
-        url.hash
+        url.hash ||
+        url.port === "0" ||
+        /[\\\r\n]/.test(value)
       )
         throw new Error();
     } catch {
       this.modalError.set(
-        "ระบุที่อยู่ Gateway แบบ HTTPS โดยไม่มีข้อมูลเข้าสู่ระบบ query หรือ fragment",
+        this.lanHTTPEnabled()
+          ? "ระบุ HTTPS หรือ HTTP ด้วย IP ภายใน เช่น http://10.10.8.127:8080 โดยไม่มี path ข้อมูลเข้าสู่ระบบ query หรือ fragment"
+          : "ระบุที่อยู่ Gateway แบบ HTTPS โดยไม่มี path ข้อมูลเข้าสู่ระบบ query หรือ fragment",
       );
       return;
     }
