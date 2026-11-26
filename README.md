@@ -6,6 +6,7 @@ Gateway กลางรับคำขอจาก Mobile แล้วส่ง�
 gateway/
   backend/            Go Gateway, Admin API และระบบตั้งค่าครั้งแรก
   frontend/           Angular + Tailwind CSS
+  .env.example        ตัวอย่างคอนฟิกสำหรับ Compose ที่ root
   Dockerfile          build Angular แล้วฝัง static assets ใน Go image เดียว
   docker-compose.yml  เริ่มจากซอร์สใน workspace
   deploy/gateway/     เครื่องมือ dev และการติดตั้งเดิม
@@ -16,10 +17,13 @@ gateway/
 ติดตั้ง Docker Engine/Desktop และ Compose v2 แล้วรันจากโฟลเดอร์ `gateway/`:
 
 ```bash
+cp -n .env.example .env
 docker compose up -d
 ```
 
-ครั้งแรกจะดาวน์โหลด dependencies และ build Angular/Go เปิด [หน้าตั้งค่าครั้งแรก](http://localhost:8080/setup/) แล้วอ่านรหัสตั้งค่าที่เครื่อง:
+ไฟล์ตัวอย่างใช้พอร์ต `18080` และรับเฉพาะ localhost หากมี `.env` อยู่แล้ว คำสั่งคัดลอกจะเก็บไฟล์เดิมไว้ ให้แก้ `GATEWAY_PORT` ในไฟล์เดิมตามต้องการ หากใช้ HTTPS reverse proxy ให้ชี้ปลายทางไป `http://127.0.0.1:18080` และใส่ `GATEWAY_SETUP_PUBLIC_URL` เป็น URL จริงพร้อม `GATEWAY_TRUSTED_PROXY_CIDRS` เฉพาะ proxy ที่คุณดูแลก่อนเปิด Setup ผ่าน proxy ดูรายละเอียดใน [WEB_SETUP.md](deploy/gateway/WEB_SETUP.md)
+
+ครั้งแรกจะดาวน์โหลด dependencies และ build Angular/Go เปิด [หน้าตั้งค่าครั้งแรก](http://localhost:18080/setup/) บนเครื่องที่รัน Gateway หรือผ่าน SSH tunnel; หากรันบนเซิร์ฟเวอร์ให้เข้าผ่านโดเมน HTTPS ที่ตั้งไว้ แล้วอ่านรหัสตั้งค่าที่เครื่อง:
 
 ```bash
 docker compose exec gateway /usr/local/bin/gateway setup-code
@@ -27,7 +31,7 @@ docker compose exec gateway /usr/local/bin/gateway setup-code
 
 ตั้งบัญชีผู้ดูแล ที่อยู่ HTTPS เดิม ปลายทางที่อนุญาต และใบรับรอง เมื่อเปิดใช้งานแล้วเข้า `/admin/` ผ่านที่อยู่ที่ตั้งไว้ ดู [WEB_SETUP.md](deploy/gateway/WEB_SETUP.md) ต้องมีใบ client ที่ CA ปลายทางเชื่อถือ หรือส่ง CSR ให้ CA เดิมลงนามแล้วนำใบกลับเข้า Gateway การลงนามและต่ออายุอัตโนมัติยังไม่รองรับ
 
-ค่าเริ่มต้นฟังเฉพาะ `127.0.0.1:8080` ใช้ project `erp-mobile-gateway-workspace` และ volumes แยก `gateway-workspace-data`/`gateway-workspace-config` จึงไม่ย้ายหรือใช้ข้อมูล production เดิม ถ้าพอร์ตถูกใช้ให้ตั้ง `GATEWAY_PORT`:
+Compose ใช้ project `erp-mobile-gateway-workspace` และ volumes แยก `gateway-workspace-data`/`gateway-workspace-config` จึงไม่ย้ายหรือใช้ข้อมูล production เดิม หากไม่ใช้ `.env` หรือไม่กำหนดพอร์ต ค่าเริ่มต้นของ Compose ยังเป็น `127.0.0.1:8080` สามารถกำหนดพอร์ตเฉพาะคำสั่งได้:
 
 ```bash
 GATEWAY_PORT=18080 docker compose up -d
