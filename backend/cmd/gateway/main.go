@@ -101,6 +101,14 @@ func main() {
 	address := env("LISTEN_ADDR", ":8080")
 	databasePath := env("GATEWAY_DATABASE_PATH", "data/gateway.db")
 	configDir := env("GATEWAY_CONFIG_DIR", "data/config")
+	if len(os.Args) == 2 && os.Args[1] == "setup-password" {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTSTP)
+		defer stop()
+		if err := runSetupPassword(ctx, configDir, os.Stdin, os.Stderr, os.Stdout); err != nil {
+			log.Fatal("setup-password: ", err)
+		}
+		return
+	}
 	setupEnabled, err := setupFromEnvironment()
 	if err != nil {
 		log.Fatal(err)
@@ -178,7 +186,7 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 {
-		log.Fatal("supported commands: healthcheck, setup-code, restore-config <archive> <new-directory> (passphrase on stdin)")
+		log.Fatal("supported commands: healthcheck, setup-code, setup-password (interactive local Admin password reset), restore-config <archive> <new-directory> (passphrase on stdin)")
 	}
 	allowHTTP, err := boolean("GATEWAY_ALLOW_HTTP_UPSTREAM", false)
 	if err != nil || allowHTTP {
@@ -310,6 +318,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer manager.Close()
+	control, err := bootstrap.StartAdminControl(configDir, manager.ResetAdminPassword)
+	if err != nil {
+		// A local recovery channel failure must not stop Mobile/API traffic.
+		log.Print("local administrator password control unavailable: ", err)
+	} else {
+		defer control.Close()
+	}
 	server := &http.Server{Addr: address, Handler: manager.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
