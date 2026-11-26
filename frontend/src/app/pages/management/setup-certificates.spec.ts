@@ -54,7 +54,7 @@ async function setup(validationError?: string) {
   window.eval(`(() => {\n${scripts}\n})();`);
   await vi.waitFor(() => expect(window.document.getElementById("setup-workspace")!.hidden).toBe(false));
   const byID = <T extends HTMLElement>(id: string) => window.document.getElementById(id) as T;
-  byID<HTMLInputElement>("setup-password").value = "a-test-only-password-12345";
+  byID<HTMLInputElement>("setup-password").value = "1";
   byID<HTMLButtonElement>("setup-next").click();
   byID<HTMLButtonElement>("setup-next").click();
   expect((window.document.querySelector('[data-setup-panel="2"]') as HTMLElement).hidden).toBe(false);
@@ -77,9 +77,13 @@ afterEach(() => {
 });
 
 describe("Setup certificate import using a Gateway-generated key", () => {
-  it("downloads only the displayed CSR and validates/activates an uploaded chain with a blank private key", async () => {
+  it("accepts a one-character Admin password through CSR download, certificate validation and activation", async () => {
     const fixture = await setup();
     const { byID, window, fetch, createObjectURL, downloads, errors } = fixture;
+    // JSDOM does not enforce tooShort; also check the declared browser constraint
+    // alongside the complete form flow so a native browser can accept this value.
+    const password = byID<HTMLInputElement>("setup-password");
+    expect(password.minLength).toBeLessThanOrEqual(password.value.length);
     byID<HTMLButtonElement>("setup-csr-create").click();
     await vi.waitFor(() => expect(byID<HTMLTextAreaElement>("setup-csr-pem").value).toBe(csr));
     expect(byID<HTMLTextAreaElement>("setup-key").value).toBe("");
@@ -96,6 +100,7 @@ describe("Setup certificate import using a Gateway-generated key", () => {
     await vi.waitFor(() => expect(byID<HTMLButtonElement>("setup-activate").disabled).toBe(false));
     const validation = fetch.mock.calls.find(([path]) => path === "/setup/api/validate")!;
     const payload = JSON.parse(validation[1]!.body as string);
+    expect(payload.admin_password).toBe("1");
     expect(payload.client_certificate_pem).toBe(chain);
     expect(payload.client_private_key_pem).toBe("");
     expect((validation[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("fixture-csrf");
@@ -105,6 +110,27 @@ describe("Setup certificate import using a Gateway-generated key", () => {
     const activation = fetch.mock.calls.find(([path]) => path === "/setup/api/activate")!;
     expect(JSON.parse(activation[1]!.body as string)).toEqual(payload);
     await vi.waitFor(() => expect(byID<HTMLTextAreaElement>("setup-cert").value).toBe(""));
+    expect(errors).toEqual([]);
+  });
+
+  it("keeps an empty Admin password on the first step, then allows a nonempty value", async () => {
+    const { window, byID, fetch, errors } = await setup();
+    byID<HTMLButtonElement>("setup-back").click();
+    byID<HTMLButtonElement>("setup-back").click();
+    const password = byID<HTMLInputElement>("setup-password");
+    password.value = "";
+    password.dispatchEvent(new window.Event("input", { bubbles: true }));
+    byID<HTMLButtonElement>("setup-next").click();
+    expect(password.validity.valueMissing).toBe(true);
+    expect((window.document.querySelector('[data-setup-panel="0"]') as HTMLElement).hidden).toBe(false);
+    expect((window.document.querySelector('[data-setup-panel="1"]') as HTMLElement).hidden).toBe(true);
+    expect(fetch.mock.calls.some(([path]) => path === "/setup/api/validate" || path === "/setup/api/activate")).toBe(false);
+
+    password.value = "1";
+    password.dispatchEvent(new window.Event("input", { bubbles: true }));
+    byID<HTMLButtonElement>("setup-next").click();
+    expect(password.validity.valueMissing).toBe(false);
+    expect((window.document.querySelector('[data-setup-panel="1"]') as HTMLElement).hidden).toBe(false);
     expect(errors).toEqual([]);
   });
 

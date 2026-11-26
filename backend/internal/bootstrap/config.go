@@ -167,8 +167,8 @@ func validateInput(in Input) error {
 }
 
 func validateInputWithPolicy(in Input, policy webtransport.Policy) error {
-	if in.AdminUsername == "" || in.AdminUsername != strings.TrimSpace(in.AdminUsername) || len(in.AdminUsername) > 100 || strings.ContainsAny(in.AdminUsername, "\r\n\t") || len(in.AdminPassword) < 16 || len(in.AdminPassword) > 4096 {
-		return errors.New("ระบุชื่อผู้ดูแลและรหัสผ่านอย่างน้อย 16 ตัวอักษร")
+	if in.AdminUsername == "" || in.AdminUsername != strings.TrimSpace(in.AdminUsername) || len(in.AdminUsername) > 100 || strings.ContainsAny(in.AdminUsername, "\r\n\t") || in.AdminPassword == "" || len(in.AdminPassword) > 4096 {
+		return errors.New("ระบุชื่อผู้ดูแลและรหัสผ่านที่ไม่ว่าง โดยรหัสผ่านต้องไม่เกิน 4096 ไบต์")
 	}
 	if _, err := policy.ValidateURL(in.PublicURL); err != nil {
 		return err

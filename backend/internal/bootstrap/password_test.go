@@ -121,7 +121,7 @@ func TestResetAdminPasswordRejectsInvalidAndUnavailableAccounts(t *testing.T) {
 	m := activePasswordManagerForTest(t)
 	before := passwordFilesForTest(t, m)
 	current := m.current
-	for _, password := range []string{"", strings.Repeat("x", 15), strings.Repeat("x", 4097)} {
+	for _, password := range []string{"", strings.Repeat("x", 4097)} {
 		if _, err := m.ResetAdminPassword(context.Background(), password); err == nil || strings.Contains(err.Error(), password) && password != "" {
 			t.Fatal("invalid password accepted or disclosed")
 		}

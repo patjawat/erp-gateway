@@ -36,8 +36,8 @@ func (m *Manager) resetAdminPassword(ctx context.Context, password string, persi
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if len(password) < 16 || len(password) > 4096 {
-		return "", errors.New("ระบุรหัสผ่านผู้ดูแลใหม่ยาว 16–4096 bytes")
+	if password == "" || len(password) > 4096 {
+		return "", errors.New("ระบุรหัสผ่านผู้ดูแลใหม่ที่ไม่ว่างและไม่เกิน 4096 ไบต์")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

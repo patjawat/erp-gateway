@@ -15,7 +15,7 @@
 - Gateway files only; ERP remains untouched. Shell commands start with `rtk`.
 - Do not reset the user's actual account, read their password/private keys, restart their services, or change their volumes during testing.
 - CLI command: `docker compose exec gateway /usr/local/bin/gateway setup-password`.
-- Prompt twice with terminal echo disabled; use the existing 16–4096 byte Admin password range. Never accept passwords in arguments/environment or print/log them.
+- Prompt twice with terminal echo disabled. Per the user's subsequent policy change, accept any nonempty Admin password (including one character), keeping the 4096-byte input-size bound. Apply this to Setup, reset and legacy login; archive recovery passphrase policy is separate. Never accept passwords in arguments/environment or print/log them.
 - Preserve username, identity/CA, encryption key, URL, network policy, hospital records and Mobile tokens. Do not initialize Setup or a new database.
 - Socket: `sock` (mode `0600`) inside a private `.admin/` config subdirectory (mode `0700`), with a lifetime lock preventing another control listener from replacing an active socket. Reject unsafe preexisting paths.
 - CLI and private listener work on Linux containers and native macOS. A failure before atomic config replacement leaves the old account/runtime usable. A post-rename directory-sync warning must install the confirmed new verifier and clearly report that the password changed.
@@ -68,5 +68,6 @@
 - Persistent Gateway/ERP fixture tests kept an existing Mobile token and an in-flight Mobile request working during runtime handoff and after restart.
 - Native macOS PTY tests verified successful private-socket RPC, secret-free output and restored terminal state; failure/cancellation cases passed.
 - Compose example resolution passed. Only disposable test resources were removed; the actual local Gateway account was not reset.
+- Follow-up Admin policy verification: a real browser rejects empty Setup input and advances with one character; a temporary native Gateway accepts initial password `2`, resets interactively to `1` without echo, rejects the old cookie/password, and accepts the new login with non-password config retained. Full Go tests/vet and all 144 frontend tests passed. The persistent Mobile integration also uses these one-character credentials through restart.
 
 Commit and push under existing authorization after the final diff check.

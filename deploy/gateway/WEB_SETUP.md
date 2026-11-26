@@ -69,7 +69,7 @@ Trusted proxy ต้องเป็น CIDR แบบ canonical ที่แค�
 
 ## รหัสผ่านผู้ดูแลและกรณีลืมรหัสผ่าน
 
-รหัสผ่าน Admin สำหรับเข้าเว็บ Gateway เป็นคนละค่ากับ setup code และรหัสผ่าน CA บน Mac ไฟล์ [.env.example](../../.env.example) แสดง `GATEWAY_ADMIN_PASSWORD=` ว่างไว้เพื่ออธิบายตัวเลือกของโหมดเดิม การติดตั้งปกติให้ตั้งรหัสในหน้า Setup
+รหัสผ่าน Admin สำหรับเข้าเว็บ Gateway เป็นคนละค่ากับ setup code และรหัสผ่าน CA บน Mac รหัสผ่าน Admin ไม่กำหนดจำนวนตัวอักษรขั้นต่ำ เช่น รหัสหนึ่งตัวอักษรใช้ได้ แต่ต้องไม่เป็นค่าว่าง ทั้งหน้า Setup คำสั่ง `setup-password` และโหมด legacy ใช้เกณฑ์เดียวกัน ไฟล์ [.env.example](../../.env.example) แสดง `GATEWAY_ADMIN_PASSWORD=` ว่างไว้เพื่ออธิบายตัวเลือกของโหมดเดิม การติดตั้งปกติให้ตั้งรหัสในหน้า Setup
 
 | วิธีติดตั้ง | รหัสผ่านที่ระบบใช้ | ผลของ `GATEWAY_ADMIN_PASSWORD` ใน `.env` |
 |---|---|---|
@@ -86,7 +86,7 @@ docker compose exec gateway /usr/local/bin/gateway setup-password
 
 ใช้คำสั่ง Docker โดยตรงใน Terminal แบบโต้ตอบ ไม่ใช้ `-T`, pipe หรือตัวกรอง stdin/output เช่น `rtk proxy` เพราะตัวกลางอาจทำให้ Terminal ฝั่งเครื่องผู้ดูแลแสดงสิ่งที่พิมพ์ แม้ตัวโปรแกรมใน container จะปิด echo แล้ว
 
-1. ใส่รหัสผ่านใหม่อย่างน้อย 16 ตัวอักษรและยืนยันอีกครั้ง Terminal จะไม่แสดงรหัสผ่านที่พิมพ์ ไม่ต้องใส่รหัสเดิม และไม่ส่งรหัสผ่านเป็น argument หรือ environment
+1. ใส่รหัสผ่านใหม่ที่ต้องการและยืนยันอีกครั้ง โดยต้องไม่เป็นค่าว่าง Terminal จะไม่แสดงรหัสผ่านที่พิมพ์ ไม่ต้องใส่รหัสเดิม และไม่ส่งรหัสผ่านเป็น argument หรือ environment
 2. เมื่อสำเร็จ คำสั่งจะแสดงชื่อผู้ใช้เดิม ใช้ชื่อนั้นกับรหัสผ่านใหม่เข้าสู่หน้า Admin
 3. ไม่ต้อง restart หรือเปลี่ยน `SETUP` เพื่อให้รหัสใหม่มีผล คำสั่งใช้ได้แม้ `SETUP=false` หากยืนยันรหัสไม่ตรงกันหรือยกเลิกก่อนบันทึก รหัสเดิมยังอยู่
 
@@ -116,7 +116,7 @@ docker compose up -d --build gateway
 
 ใช้ขั้นตอนนี้เฉพาะระบบที่ยังอาศัย environment และยังไม่มี `runtime.json` การมีตัวแปรนี้ใน `.env` อย่างเดียวไม่ได้หมายความว่าระบบยังเป็น legacy
 
-1. แก้ `GATEWAY_ADMIN_PASSWORD` ใน `.env` บนเครื่อง Gateway เป็นรหัสผ่านใหม่อย่างน้อย 16 ตัวอักษร ชื่อผู้ใช้ใช้ `GATEWAY_ADMIN_USERNAME` เดิม (ค่าเริ่มต้น `admin`)
+1. แก้ `GATEWAY_ADMIN_PASSWORD` ใน `.env` บนเครื่อง Gateway เป็นรหัสผ่านใหม่ที่ต้องการ โดยต้องไม่เป็นค่าว่าง ชื่อผู้ใช้ใช้ `GATEWAY_ADMIN_USERNAME` เดิม (ค่าเริ่มต้น `admin`)
 2. ใช้ Compose project, ไฟล์/overlays, volumes, encryption key และ certificate mounts ชุดเดิมทั้งหมด แล้ว recreate service เพื่อรับ environment ใหม่ ตัวอย่างเมื่อใช้ root Compose:
 
    ```sh

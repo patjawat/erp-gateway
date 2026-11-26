@@ -153,8 +153,8 @@ func StartAdminControl(directory string, reset func(context.Context, string) (st
 			if !readJSON(w, r, &in, adminControlBodyLimit) {
 				return
 			}
-			if len(in.Password) < 16 || len(in.Password) > 4096 {
-				jsonError(w, http.StatusBadRequest, "INVALID_PASSWORD", "รหัสผ่านใหม่ต้องยาว 16–4096 bytes")
+			if in.Password == "" || len(in.Password) > 4096 {
+				jsonError(w, http.StatusBadRequest, "INVALID_PASSWORD", "รหัสผ่านใหม่ต้องไม่ว่างและไม่เกิน 4096 ไบต์")
 				return
 			}
 			username, err := reset(r.Context(), in.Password)
@@ -199,8 +199,8 @@ func RequestAdminPasswordReset(ctx context.Context, directory, password string) 
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if len(password) < 16 || len(password) > 4096 {
-		return "", errors.New("รหัสผ่านใหม่ต้องยาว 16–4096 bytes")
+	if password == "" || len(password) > 4096 {
+		return "", errors.New("รหัสผ่านใหม่ต้องไม่ว่างและไม่เกิน 4096 ไบต์")
 	}
 	private, err := privateControlDirectory(directory, false)
 	if err != nil {

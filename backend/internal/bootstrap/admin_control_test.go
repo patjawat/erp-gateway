@@ -29,7 +29,7 @@ func controlTestDir(t *testing.T) string {
 func TestAdminControlPrivateSocketRoundTripAndCleanup(t *testing.T) {
 	dir := controlTestDir(t)
 	var calls atomic.Int32
-	const password = "test-only-new-admin-password"
+	const password = "1"
 	control, err := StartAdminControl(dir, func(ctx context.Context, got string) (string, error) {
 		calls.Add(1)
 		if got != password || ctx.Err() != nil {
@@ -142,7 +142,7 @@ func TestAdminControlRejectsBadRequestsAndSanitizesErrors(t *testing.T) {
 		{"POST", "/other", "application/json", `{}`},
 		{"POST", "/password", "text/plain", password},
 		{"POST", "/password", "application/json", `{`},
-		{"POST", "/password", "application/json", `{"password":"short"}`},
+		{"POST", "/password", "application/json", `{"password":""}`},
 		{"POST", "/password", "application/json", `{"password":"` + strings.Repeat("a", 4097) + `"}`},
 		{"POST", "/password", "application/json", `{"password":"` + password + `","unexpected":true}`},
 		{"POST", "/password", "application/json", `{"password":"` + password + `"} {}`},

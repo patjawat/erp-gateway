@@ -52,8 +52,8 @@ func TestLocalAdminPasswordResetPreservesMobileSessionsAndData(t *testing.T) {
 	configDir := filepath.Join(directory, "config")
 	databasePath := filepath.Join(directory, "gateway.db")
 	const username = "owner-admin"
-	const oldPassword = "old-test-only-admin-password"
-	const newPassword = "new-test-only-admin-password"
+	const oldPassword = "2"
+	const newPassword = "1"
 
 	var calls atomic.Int32
 	var blockProfile atomic.Bool
@@ -151,6 +151,12 @@ func TestLocalAdminPasswordResetPreservesMobileSessionsAndData(t *testing.T) {
 		AdminUsername: username, AdminPassword: oldPassword, PublicURL: "https://gateway.example.invalid",
 		ApprovedUpstreams:    []string{"11447=https://11447.example.invalid"},
 		ClientCertificatePEM: string(chain), ClientPrivateKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})),
+	}
+	emptyPassword := input
+	emptyPassword.AdminPassword = ""
+	response = passwordResetSetupRequest(t, manager, "/setup/api/validate", emptyPassword, setupCookie, setupSession.Data.CSRF)
+	if response.Code != http.StatusBadRequest {
+		t.Fatal("initial Setup accepted an empty administrator password", response.Code)
 	}
 	response = passwordResetSetupRequest(t, manager, "/setup/api/activate", input, setupCookie, setupSession.Data.CSRF)
 	if response.Code != http.StatusOK {

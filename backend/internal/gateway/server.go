@@ -74,8 +74,8 @@ func New(config Config) (*Server, error) {
 	if config.Store == nil {
 		return nil, errors.New("gateway store is required")
 	}
-	if config.AdminUsername == "" || (config.AdminPasswordVerifier == nil && len(config.AdminPassword) < 16) {
-		return nil, errors.New("admin username and password of at least 16 characters are required")
+	if config.AdminUsername == "" || (config.AdminPasswordVerifier == nil && config.AdminPassword == "") {
+		return nil, errors.New("admin username and a non-empty password are required")
 	}
 	if config.PublicURL != "" {
 		if _, err := config.WebPolicy.ValidateURL(config.PublicURL); err != nil {

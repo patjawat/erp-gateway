@@ -27,8 +27,8 @@ func setupPasswordWithPrompts(ctx context.Context, prompt passwordPrompt, reset 
 		}
 		return errors.New("ยกเลิกการป้อนรหัสผ่าน ข้อมูลเดิมยังคงอยู่")
 	}
-	if len(first) < 16 || len(first) > 4096 {
-		return errors.New("รหัสผ่านใหม่ต้องยาว 16–4096 bytes")
+	if len(first) == 0 || len(first) > 4096 {
+		return errors.New("รหัสผ่านใหม่ต้องไม่ว่างและไม่เกิน 4096 ไบต์")
 	}
 	second, err := prompt("Confirm new Admin password: ")
 	defer clear(second)

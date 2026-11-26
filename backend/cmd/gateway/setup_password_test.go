@@ -18,25 +18,32 @@ import (
 )
 
 func TestSetupPasswordPromptsConfirmAndNeverPrintSecret(t *testing.T) {
-	const password = "  test-only-admin-password  "
-	var prompts []string
-	var output bytes.Buffer
-	calls := 0
-	err := setupPasswordWithPrompts(context.Background(), func(prompt string) ([]byte, error) {
-		prompts = append(prompts, prompt)
-		return []byte(password), nil
-	}, func(ctx context.Context, got string) (string, error) {
-		calls++
-		if ctx.Err() != nil || got != password {
-			t.Error("password was trimmed or incorrect")
-		}
-		return "original-admin", nil
-	}, &output)
-	if err != nil || calls != 1 || len(prompts) != 2 || prompts[0] != "New Admin password: " || prompts[1] != "Confirm new Admin password: " {
-		t.Fatal("interactive reset failed", err, calls, prompts)
-	}
-	if strings.Contains(output.String(), password) || !strings.Contains(output.String(), "original-admin") {
-		t.Fatal("success output disclosed password or omitted username")
+	for _, test := range []struct{ name, password string }{
+		{"single-character", "1"},
+		{"preserves-spaces", "  test-only-admin-password  "},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			password := test.password
+			var prompts []string
+			var output bytes.Buffer
+			calls := 0
+			err := setupPasswordWithPrompts(context.Background(), func(prompt string) ([]byte, error) {
+				prompts = append(prompts, prompt)
+				return []byte(password), nil
+			}, func(ctx context.Context, got string) (string, error) {
+				calls++
+				if ctx.Err() != nil || got != password {
+					t.Error("password was trimmed or incorrect")
+				}
+				return "original-admin", nil
+			}, &output)
+			if err != nil || calls != 1 || len(prompts) != 2 || prompts[0] != "New Admin password: " || prompts[1] != "Confirm new Admin password: " {
+				t.Fatal("interactive reset failed", err, calls, prompts)
+			}
+			if strings.Contains(output.String(), password) || !strings.Contains(output.String(), "original-admin") {
+				t.Fatal("success output disclosed password or omitted username")
+			}
+		})
 	}
 }
 
@@ -46,7 +53,7 @@ func TestSetupPasswordStopsBeforeResetOnInvalidOrCancelledInput(t *testing.T) {
 		inputErr            error
 		cancelled           bool
 	}{
-		{name: "too-short", first: "short"},
+		{name: "empty", first: ""},
 		{name: "too-long", first: strings.Repeat("x", 4097)},
 		{name: "confirmation-mismatch", first: "test-only-new-password", second: "different-new-password"},
 		{name: "EOF", inputErr: io.EOF},
