@@ -1,4 +1,6 @@
-import { Component, signal } from "@angular/core";
+import { Component, computed, signal } from "@angular/core";
+
+let validityControlSequence = 0;
 
 @Component({
   selector: "gw-certificate-ca-guide",
@@ -72,6 +74,18 @@ import { Component, signal } from "@angular/core";
 })
 export class CertificateCaGuideComponent {
   readonly feedback = signal("");
+  readonly validityDays = signal("90");
+  readonly validityControlID = `gateway-client-validity-${++validityControlSequence}`;
+  readonly presets = [90, 180, 365];
+  readonly validatedDays = computed(() => {
+    const value = this.validityDays().trim();
+    if (!/^\d+$/.test(value)) return null;
+    const days = Number(value);
+    return Number.isInteger(days) && days >= 1 && days <= 365 ? days : null;
+  });
+  readonly validityError = computed(() =>
+    this.validatedDays() === null ? "ระบุจำนวนเต็ม 1–365 วัน" : "",
+  );
   // Keep the commands in sync with the first-run Setup guide and GATEWAY_CLIENT_CA.md.
   readonly commands = {
     init: `mkdir -p -m 700 "$HOME/.hospital-erp-pki"
@@ -85,6 +99,26 @@ bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh
   "$HOME/.hospital-erp-pki/central-gateway-client-ca/gateway-client-ca.crt.pem" \\
   > "$HOME/Downloads/gateway-client-chain.pem"`,
   };
+  readonly signingCommand = computed(() => {
+    const days = this.validatedDays();
+    return days === null ? "" : `${this.commands.sign} \\\n  ${days}`;
+  });
+
+  setValidityDays(value: string): void {
+    this.validityDays.set(value);
+    this.feedback.set("");
+  }
+
+  onValidityInput(event: Event): void {
+    this.setValidityDays((event.target as HTMLInputElement).value);
+  }
+
+  async copySigningCommand(command: HTMLTextAreaElement): Promise<void> {
+    const generated = this.signingCommand();
+    if (!generated) return;
+    command.value = generated;
+    await this.copy(command);
+  }
 
   async copy(command: HTMLTextAreaElement): Promise<void> {
     this.feedback.set("");

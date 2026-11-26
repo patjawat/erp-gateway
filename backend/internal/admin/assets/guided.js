@@ -254,7 +254,22 @@
     button.disabled=true;try{const result=await api("hospitals/"+encodeURIComponent(hospital.id)+"/updater-token",{method:"POST",body:{}});byId("updater-token-value").value=result.token||"";byId("token-dialog").showModal();}catch(error){notice(error.message,"error");}finally{button.disabled=false;}
   }
   async function copyText(id){const text=byId(id).value;try{await navigator.clipboard.writeText(text);notice("คัดลอกแล้ว","success");}catch(_){byId(id).focus();byId(id).select();notice("เลือกข้อความแล้ว กดคัดลอกด้วยแป้นพิมพ์");}}
+  const signingCommandBase=byId("setup-ca-sign-command").value;
+  function updateClientValidity(){
+    const input=byId("setup-ca-validity-days"),raw=input.value.trim(),days=/^\d+$/.test(raw)?Number(raw):NaN;
+    const valid=Number.isInteger(days)&&days>=1&&days<=365;
+    byId("setup-ca-sign-command").value=valid?signingCommandBase+" \\\n  "+days:"";
+    const error=byId("setup-ca-validity-error");error.textContent=valid?"":"ระบุจำนวนเต็ม 1–365 วัน";error.hidden=valid;input.setAttribute("aria-invalid",valid?"false":"true");
+    document.querySelector('[data-ca-command-copy="setup-ca-sign-command"]').disabled=!valid;
+    document.querySelectorAll("[data-ca-validity-preset]").forEach(button=>button.setAttribute("aria-pressed",valid&&Number(button.dataset.caValidityPreset)===days?"true":"false"));
+    input.closest(".ca-signing-guide").querySelector('[role="status"]').textContent="";
+  }
+  byId("setup-ca-validity-days").addEventListener("input",updateClientValidity);
+  byId("setup-ca-validity-days").addEventListener("keydown",event=>{if(event.key==="Enter")event.preventDefault();});
+  document.querySelectorAll("[data-ca-validity-preset]").forEach(button=>button.addEventListener("click",()=>{byId("setup-ca-validity-days").value=button.dataset.caValidityPreset;updateClientValidity();}));
+  updateClientValidity();
   document.querySelectorAll("[data-ca-command-copy]").forEach(button=>button.addEventListener("click",async()=>{
+    if(button.disabled)return;
     const command=byId(button.dataset.caCommandCopy),feedback=button.closest(".ca-signing-guide").querySelector('[role="status"]');
     feedback.textContent="";
     try{await navigator.clipboard.writeText(command.value);feedback.textContent="คัดลอกคำสั่งแล้ว นำไปวางใน Terminal บน Mac";}
@@ -307,11 +322,11 @@
   }
   function setupPayload(){const list=id=>byId(id).value.split(/[\n,]+/).map(v=>v.trim()).filter(Boolean);return {admin_username:byId("setup-username").value.trim(),admin_password:byId("setup-password").value,public_url:byId("setup-public-url").value.trim(),trusted_proxy_cidrs:list("setup-proxies"),approved_upstreams:list("setup-upstreams"),private_upstream_cidrs:list("setup-private-cidrs"),client_certificate_pem:byId("setup-cert").value,client_private_key_pem:byId("setup-key").value,hospital_ca_pem:byId("setup-ca").value,...(byId("setup-encryption-key").value?{encryption_key:byId("setup-encryption-key").value}:{})};}
   function setupStep(step){ui.setupStep=step;document.querySelectorAll("[data-setup-panel]").forEach(el=>el.hidden=Number(el.dataset.setupPanel)!==step);document.querySelectorAll("[data-setup-step]").forEach(el=>{el.classList.toggle("active",Number(el.dataset.setupStep)===step);el.setAttribute("aria-current",Number(el.dataset.setupStep)===step?"step":"false");});byId("setup-back").hidden=step===0;byId("setup-next").hidden=step===3;byId("setup-activate").hidden=step!==3;setError("setup-error","");}
-  function checkCurrentStep(){if(ui.setupStep===1&&!gatewayURLValid(byId("setup-public-url").value.trim(),ui.setupLANHTTPEnabled)){setError("setup-error",gatewayURLMessage(ui.setupLANHTTPEnabled));return false;}for(const field of document.querySelectorAll('[data-setup-panel="'+ui.setupStep+'"] input,[data-setup-panel="'+ui.setupStep+'"] textarea')){if(!field.reportValidity())return false;}return true;}
+  function checkCurrentStep(){if(ui.setupStep===1&&!gatewayURLValid(byId("setup-public-url").value.trim(),ui.setupLANHTTPEnabled)){setError("setup-error",gatewayURLMessage(ui.setupLANHTTPEnabled));return false;}for(const field of document.querySelectorAll('[data-setup-panel="'+ui.setupStep+'"] input:not([data-ca-guide-control]),[data-setup-panel="'+ui.setupStep+'"] textarea')){if(!field.reportValidity())return false;}return true;}
   byId("setup-next").addEventListener("click",()=>{if(checkCurrentStep())setupStep(Math.min(3,ui.setupStep+1));});
   byId("setup-back").addEventListener("click",()=>setupStep(Math.max(0,ui.setupStep-1)));
   document.querySelectorAll("[data-setup-step]").forEach(button=>button.addEventListener("click",()=>{const step=Number(button.dataset.setupStep);if(step<ui.setupStep || checkCurrentStep())setupStep(step);}));
-  byId("setup-form").addEventListener("input",()=>{ui.setupValid=false;byId("setup-activate").disabled=true;});
+  byId("setup-form").addEventListener("input",event=>{if(event.target.closest?.("[data-ca-guide-control]"))return;ui.setupValid=false;byId("setup-activate").disabled=true;});
   byId("setup-public-url").addEventListener("input",()=>{ui.setupURLTouched=true;});
   byId("setup-code-form").addEventListener("submit",async event=>{event.preventDefault();const button=byId("setup-unlock-submit");button.disabled=true;notice("");try{const data=await setupAPI("session",{code:byId("setup-code").value.trim()});ui.setupCSRF=data.csrf_token;byId("setup-code").value="";byId("setup-unlock").hidden=true;byId("setup-workspace").hidden=false;setupStep(0);}catch(error){notice(error.message,"error");}finally{button.disabled=false;}});
   byId("setup-csr-copy").addEventListener("click",()=>copyText("setup-csr-pem"));

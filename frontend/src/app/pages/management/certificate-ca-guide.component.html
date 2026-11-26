@@ -40,20 +40,63 @@
       </li>
       <li>
         <h3>ลงนาม CSR ด้วย CA เดิม</h3>
+        <label class="field" [for]="validityControlID">
+          อายุใบรับรอง client ของ Gateway (วัน)
+          <input
+            [id]="validityControlID"
+            type="number"
+            min="1"
+            max="365"
+            step="1"
+            inputmode="numeric"
+            [value]="validityDays()"
+            (input)="onValidityInput($event)"
+            (keydown.enter)="$event.preventDefault()"
+            [attr.aria-invalid]="validityError() ? 'true' : 'false'"
+            [attr.aria-describedby]="validityControlID + '-help ' + validityControlID + '-error'"
+          />
+        </label>
+        <div class="page-actions" role="group" aria-label="อายุใบรับรองที่ใช้บ่อย">
+          @for (days of presets; track days) {
+          <button
+            class="button"
+            type="button"
+            [attr.aria-pressed]="validatedDays() === days"
+            (click)="setValidityDays('' + days)"
+          >
+            {{ days }} วัน
+          </button>
+          }
+        </div>
+        <p class="help" [id]="validityControlID + '-help'">
+          เลือกจำนวนเต็ม 1–365 วัน อายุเริ่มเมื่อสั่งลงนามบน Mac
+          ค่านี้ไม่ต่ออายุใบเดิมและไม่เปลี่ยนอายุ CA
+        </p>
+        <p
+          class="field-error"
+          [id]="validityControlID + '-error'"
+          [hidden]="!validityError()"
+          role="alert"
+        >{{ validityError() }}</p>
         <textarea
           #signCommand
           readonly
-          rows="4"
+          rows="5"
           wrap="off"
           spellcheck="false"
           aria-label="คำสั่งลงนาม CSR บน Mac"
-          [value]="commands.sign"
+          [value]="signingCommand()"
         ></textarea>
-        <button class="button" type="button" (click)="copy(signCommand)">
+        <button
+          class="button"
+          type="button"
+          [disabled]="!!validityError()"
+          (click)="copySigningCommand(signCommand)"
+        >
           คัดลอกคำสั่งลงนาม
         </button>
         <p class="help">
-          ใส่รหัสผ่าน CA ใน Terminal จะได้ใบรับรองอายุเริ่มต้น 90 วัน
+          ใส่รหัสผ่าน CA ใน Terminal จะได้ใบรับรองตามจำนวนวันที่เลือก
           และค่า <code>HOSPITAL_GATEWAY_CLIENT_SPKI_SHA256</code>
           สำหรับตั้งค่าฝั่ง API สคริปต์ไม่เขียนทับไฟล์เดิม:
           เมื่อต่ออายุให้เปลี่ยนชื่อไฟล์ผลลัพธ์ในคำสั่งนี้และคำสั่งรวมใบให้ตรงกัน
@@ -76,7 +119,8 @@
         <p>
           นำไฟล์ <code>gateway-client-chain.pem</code> เข้าในช่องใบรับรอง client
           และ chain เมื่อใช้ CSR ที่ Gateway สร้าง ไม่ต้องใส่ private key
-          เพิ่มเติม
+          เพิ่มเติม เมื่อต่ออายุด้วย CA และกุญแจ Gateway เดิม
+          โดยปกตินำเข้าใบ client ใหม่ที่ Gateway เท่านั้น
         </p>
       </li>
     </ol>
@@ -88,7 +132,8 @@
     <p class="help">
       ฝั่ง API ต้องเชื่อถือใบ CA สาธารณะ
       <code>gateway-client-ca.crt.pem</code> และตั้ง SPKI ของ Gateway ด้วย
-      จึงเชื่อมต่อได้ ส่วนช่อง “CA ของใบ server โรงพยาบาล” ในหน้า Setup
+      จึงเชื่อมต่อได้ ฝั่ง API เก็บ CA สาธารณะและ SPKI เดิมไว้เมื่อต่ออายุด้วย CA
+      และกุญแจเดิม ส่วนช่อง “CA ของใบ server โรงพยาบาล” ในหน้า Setup
       ใช้ตรวจตัวตนโรงพยาบาล เป็นคนละส่วนกับ CA ที่ใช้ลงนามนี้
     </p>
     <p class="help copy-status" role="status">{{ feedback() }}</p>

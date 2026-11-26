@@ -32,6 +32,8 @@ docker compose exec gateway /usr/local/bin/gateway setup-code
 
 ตั้งบัญชีผู้ดูแล ที่อยู่ HTTPS เดิม ปลายทางที่อนุญาต และใบรับรอง เมื่อเปิดใช้งานแล้วเข้า `/admin/` ผ่านที่อยู่ที่ตั้งไว้ ดู [WEB_SETUP.md](deploy/gateway/WEB_SETUP.md) หากยังไม่มี SSL และใช้ภายใน LAN ให้ใช้โหมด HTTP ด้านล่าง ต้องมีใบ client ที่ CA ปลายทางเชื่อถือ หรือส่ง CSR ให้ CA เดิมลงนามแล้วนำใบกลับเข้า Gateway การลงนามและต่ออายุอัตโนมัติยังไม่รองรับ
 
+คู่มือลงนามในหน้า Setup และหน้าใบรับรองเลือกอายุ **ใบ client ของ Gateway** ได้ 1–365 วัน แล้วคัดลอกคำสั่งไปเซ็นบน Mac อายุเริ่มเมื่อเซ็นจริง นำใบใหม่กลับเข้า Gateway; API ลูกค้าเก็บใบ CA สาธารณะและ pin เดิมต่อได้เมื่อใช้ CA/key เดิม ดู [ตำแหน่งไฟล์และการต่ออายุ](deploy/gateway/GATEWAY_CLIENT_CA.md)
+
 Compose ใช้ project `erp-gateway` และ volumes แยก `gateway-workspace-data`/`gateway-workspace-config` จึงไม่ย้ายหรือใช้ข้อมูล production เดิม หากไม่ใช้ `.env` หรือไม่กำหนดพอร์ต ค่าเริ่มต้นของ Compose ยังเป็น `127.0.0.1:8080` สามารถกำหนดพอร์ตเฉพาะคำสั่งได้:
 
 ```bash
