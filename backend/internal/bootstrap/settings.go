@@ -69,6 +69,9 @@ func validatePublicSettingsWithPolicy(in PublicSettings, validatePolicy func([]s
 
 // currentLocked refuses out-of-band edits rather than silently overwriting them.
 func (m *Manager) currentLocked() (RuntimeConfig, []byte, error) {
+	if m.fenced {
+		return RuntimeConfig{}, nil, errors.New("พักการเปลี่ยนแปลงระหว่างย้ายเครื่อง")
+	}
 	if m.current == nil || m.config.Version != 1 {
 		return RuntimeConfig{}, nil, errors.New("การตั้งค่าผ่านเว็บต้องใช้ persistent setup; ระบบ legacy ต้องนำเข้าค่าเดิมก่อน")
 	}

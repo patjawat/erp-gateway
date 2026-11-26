@@ -3,8 +3,6 @@ package bootstrap
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -52,11 +50,30 @@ type Options struct {
 	ValidatePolicy    func([]string, []string) error
 	Assets            http.Handler
 	Legacy            *Runtime
+	BackupBinary      string
+	IntegrationFiles  map[string]string
 }
 
 type running struct {
 	Runtime
-	requests sync.WaitGroup
+	requests  sync.WaitGroup
+	stopOnce  sync.Once
+	closeOnce sync.Once
+}
+
+func (r *running) stop() {
+	r.stopOnce.Do(func() {
+		if r.Stop != nil {
+			r.Stop()
+		}
+	})
+}
+func (r *running) close() {
+	r.closeOnce.Do(func() {
+		if r.Close != nil {
+			r.Close()
+		}
+	})
 }
 
 type setupSession struct {
@@ -71,26 +88,41 @@ type attempt struct {
 }
 
 type Manager struct {
-	options   Options
-	mu        sync.Mutex
-	closed    bool
-	closeOnce sync.Once
-	retired   sync.WaitGroup
-	current   *running
-	config    RuntimeConfig
-	key       []byte
-	state     string
-	reason    string
-	sessions  map[string]setupSession
-	attempts  map[string]attempt
+	options    Options
+	mu         sync.Mutex
+	closed     bool
+	closeOnce  sync.Once
+	retired    sync.WaitGroup
+	current    *running
+	config     RuntimeConfig
+	key        []byte
+	state      string
+	reason     string
+	sessions   map[string]setupSession
+	attempts   map[string]attempt
+	backups    *backupService
+	generation uint64
+	fenced     bool
 }
 
 func New(options Options) (*Manager, error) {
 	if options.Directory == "" || options.DatabasePath == "" || options.Build == nil {
 		return nil, errors.New("bootstrap directory, database and runtime builder are required")
 	}
+	var pathErr error
+	options.Directory, pathErr = filepath.Abs(options.Directory)
+	if pathErr != nil {
+		return nil, pathErr
+	}
+	options.DatabasePath, pathErr = filepath.Abs(options.DatabasePath)
+	if pathErr != nil {
+		return nil, pathErr
+	}
 	if err := os.MkdirAll(options.Directory, 0700); err != nil {
 		return nil, err
+	}
+	if err := recoverBackupCutover(options.Directory, options.DatabasePath); err != nil {
+		return nil, fmt.Errorf("restore journal recovery: %w", err)
 	}
 	if options.PublicSetupURL != "" {
 		if _, err := options.WebPolicy.ValidateURL(options.PublicSetupURL); err != nil {
@@ -105,6 +137,7 @@ func New(options Options) (*Manager, error) {
 		}
 	}
 	m := &Manager{options: options, state: "setup", sessions: map[string]setupSession{}, attempts: map[string]attempt{}}
+	m.fenced = exists(filepath.Join(options.Directory, ".backup", "source-fence.json"))
 	if exists(filepath.Join(options.Directory, "runtime.json")) {
 		cfg, key, err := LoadRuntime(options.Directory)
 		if err == nil {
@@ -217,12 +250,17 @@ func (m *Manager) managementPolicy() webtransport.Policy {
 
 func (m *Manager) install(runtime Runtime) {
 	old := m.current
-	if old != nil && old.Stop != nil {
-		old.Stop()
+	if old != nil {
+		old.stop()
 	}
 	m.current, m.state, m.reason = &running{Runtime: runtime}, "active", ""
+	m.generation++
+	if m.fenced {
+		m.state = "migration-paused"
+		m.reason = "พักเครื่องนี้สำหรับย้ายข้อมูล กรุณาตรวจสถานะปลายทางก่อนเปิดอีกครั้ง"
+	}
 	m.sessions = map[string]setupSession{}
-	if runtime.Start != nil {
+	if runtime.Start != nil && !m.fenced {
 		runtime.Start()
 	}
 	if old != nil {
@@ -231,9 +269,7 @@ func (m *Manager) install(runtime Runtime) {
 		go func() {
 			defer m.retired.Done()
 			old.requests.Wait()
-			if old.Close != nil {
-				old.Close()
-			}
+			old.close()
 		}()
 	}
 }
@@ -242,17 +278,19 @@ func (m *Manager) Close() {
 	m.closeOnce.Do(func() {
 		m.mu.Lock()
 		m.closed = true
+		backups := m.backups
+		m.mu.Unlock()
+		if backups != nil {
+			backups.close()
+		}
+		m.mu.Lock()
 		current := m.current
 		m.current = nil
 		m.mu.Unlock()
 		if current != nil {
-			if current.Stop != nil {
-				current.Stop()
-			}
+			current.stop()
 			current.requests.Wait()
-			if current.Close != nil {
-				current.Close()
-			}
+			current.close()
 		}
 		m.retired.Wait()
 	})
@@ -290,10 +328,28 @@ func (m *Manager) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	current := m.current
-	if current != nil && !strings.HasPrefix(r.URL.Path, "/setup") {
-		current.requests.Add(1)
+	if (strings.HasPrefix(r.URL.Path, "/backup/transfer/") || r.URL.Path == "/backup/oauth/callback") && m.backups != nil {
+		s := m.backups
 		m.mu.Unlock()
-		defer current.requests.Done()
+		s.transportHTTP(w, r)
+		return
+	}
+	control := strings.HasPrefix(r.URL.Path, "/admin/api/backups") || r.URL.Path == "/admin/api/login" || r.URL.Path == "/admin/api/session" || r.URL.Path == "/admin/api/logout" || (strings.HasPrefix(r.URL.Path, "/admin/") && !strings.HasPrefix(r.URL.Path, "/admin/api/"))
+	if m.fenced && !control && !strings.HasPrefix(r.URL.Path, "/setup") && r.URL.Path != "/healthz" {
+		m.mu.Unlock()
+		w.Header().Set("Retry-After", "5")
+		jsonError(w, 503, "MIGRATION_PAUSED", "พัก Gateway สำหรับย้ายข้อมูล กรุณาลองอีกครั้ง")
+		return
+	}
+	if current != nil && !strings.HasPrefix(r.URL.Path, "/setup") {
+		tracked := !control
+		if tracked {
+			current.requests.Add(1)
+		}
+		m.mu.Unlock()
+		if tracked {
+			defer current.requests.Done()
+		}
 		current.Handler.ServeHTTP(w, r)
 		return
 	}
@@ -330,6 +386,13 @@ func (m *Manager) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !m.allowedSetupRequest(r) {
 		jsonError(w, 403, "LOCAL_SETUP_REQUIRED", "เปิดหน้าตั้งค่าผ่าน localhost/SSH tunnel หรือ HTTPS proxy ที่ผู้ดูแลกำหนดไว้")
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/setup/api/backups") {
+		if !m.authorizeBackupSetup(w, r) {
+			return
+		}
+		m.BackupHandler().ServeHTTP(w, r)
 		return
 	}
 	switch {
@@ -881,49 +944,17 @@ func (m *Manager) createCSR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unlock()
-	name := filepath.Join(m.options.Directory, "staged-client-key.pem")
-	var private *ecdsa.PrivateKey
-	if exists(name) {
-		body, e := readBounded(name, 32<<10)
-		if e != nil {
-			jsonError(w, 409, "KEY_RECOVERY_REQUIRED", "อ่าน private key ที่สร้างไว้ไม่ได้ กรุณากู้คืนไฟล์เดิม")
-			return
-		}
-		block, _ := pem.Decode(body)
-		if block == nil {
-			jsonError(w, 409, "KEY_RECOVERY_REQUIRED", "private key เดิมไม่ถูกต้อง")
-			return
-		}
-		parsed, e := x509.ParsePKCS8PrivateKey(block.Bytes)
-		if e != nil {
-			jsonError(w, 409, "KEY_RECOVERY_REQUIRED", "private key เดิมไม่ถูกต้อง")
-			return
-		}
-		private, ok = parsed.(*ecdsa.PrivateKey)
-		if !ok {
-			jsonError(w, 409, "KEY_RECOVERY_REQUIRED", "private key เดิมไม่ใช่ P256")
-			return
-		}
-	} else {
-		private, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err == nil {
-			var der []byte
-			der, err = x509.MarshalPKCS8PrivateKey(private)
-			if err == nil {
-				err = atomicFile(name, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
-			}
-		}
-		if err != nil {
-			jsonError(w, 503, "KEY_CREATE_FAILED", "สร้างและเก็บ private key ไม่สำเร็จ")
-			return
-		}
+	private, err := m.csrPrivateKey()
+	if err != nil {
+		jsonError(w, 409, "KEY_RECOVERY_REQUIRED", err.Error())
+		return
 	}
 	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "ERP Mobile Gateway", Organization: []string{"ERP Mobile"}}}, private)
 	if err != nil {
 		jsonError(w, 503, "CSR_CREATE_FAILED", "สร้าง CSR ไม่สำเร็จ")
 		return
 	}
-	spki, err := x509.MarshalPKIXPublicKey(&private.PublicKey)
+	spki, err := x509.MarshalPKIXPublicKey(private.Public())
 	if err != nil {
 		jsonError(w, 503, "CSR_CREATE_FAILED", "อ่าน public key ไม่สำเร็จ")
 		return

@@ -87,8 +87,8 @@ export class GatewayApi {
   put<T = unknown>(path: string, body?: unknown): Promise<T> {
     return this.request<T>("PUT", path, body);
   }
-  delete<T = unknown>(path: string): Promise<T> {
-    return this.request<T>("DELETE", path);
+  delete<T = unknown>(path: string, timeoutMs = 25000): Promise<T> {
+    return this.request<T>("DELETE", path, undefined, {}, timeoutMs);
   }
   private headers(method: string, path: string): HttpHeaders {
     let headers = new HttpHeaders({ Accept: "application/json" });
@@ -101,6 +101,7 @@ export class GatewayApi {
     path: string,
     body?: unknown,
     params: Record<string, string | number> = {},
+    timeoutMs?: number,
   ): Promise<T> {
     const version = this.authVersion;
     try {
@@ -112,7 +113,7 @@ export class GatewayApi {
           credentials: "same-origin",
           redirect: "error",
           cache: "no-store",
-          timeout: body instanceof FormData ? 90000 : 25000,
+          timeout: timeoutMs ?? (body instanceof FormData ? 15 * 60 * 1000 : 25000),
         }),
       );
       return result.data;
@@ -143,7 +144,7 @@ export class GatewayApi {
     }
     return new ApiError("เชื่อมต่อ Gateway ไม่ได้ กรุณาลองอีกครั้ง");
   }
-  async download(path: string, body?: unknown): Promise<void> {
+  async download(path: string, body?: unknown, filename?: string): Promise<void> {
     const version = this.authVersion;
     try {
       const response = await firstValueFrom(
@@ -162,7 +163,7 @@ export class GatewayApi {
       const url = URL.createObjectURL(response.body);
       const a = document.createElement("a");
       a.href = url;
-      a.download =
+      a.download = filename ||
         "gateway-recovery-" + new Date().toISOString().slice(0, 10) + ".json";
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);

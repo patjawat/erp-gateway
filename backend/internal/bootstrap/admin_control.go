@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -58,9 +59,12 @@ func privateControlDirectory(directory string, create bool) (string, error) {
 // StartAdminControl serves only a private filesystem socket. It must never be
 // registered on the public Gateway HTTP router. Possession of this socket is
 // deliberately equivalent to local access to the Gateway configuration volume.
-func StartAdminControl(directory string, reset func(context.Context, string) (string, error)) (io.Closer, error) {
+func StartAdminControl(directory string, reset func(context.Context, string) (string, error), controls ...http.Handler) (io.Closer, error) {
 	if reset == nil {
 		return nil, errors.New("password reset operation is unavailable")
+	}
+	if len(controls) > 1 {
+		return nil, errors.New("only one private backup control handler is supported")
 	}
 	private, err := privateControlDirectory(directory, true)
 	if err != nil {
@@ -138,6 +142,21 @@ func StartAdminControl(directory string, reset func(context.Context, string) (st
 	control := &adminControl{listener: listener, lock: lock, socket: socket, identity: identity, done: make(chan struct{})}
 	control.server = &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if len(controls) == 1 && controls[0] != nil && (r.URL.Path == "/backups" || strings.HasPrefix(r.URL.Path, "/backups/")) {
+				if path.Clean(r.URL.Path) != r.URL.Path {
+					jsonError(w, http.StatusNotFound, "NOT_FOUND", "ไม่พบคำสั่งควบคุมภายใน")
+					return
+				}
+				copy := r.Clone(r.Context())
+				copy.URL.Path = "/admin/api/backups" + strings.TrimPrefix(r.URL.Path, "/backups")
+				copy.URL.RawPath = ""
+				w.Header().Set("Cache-Control", "no-store, private")
+				w.Header().Set("X-Content-Type-Options", "nosniff")
+				http.NewResponseController(w).SetReadDeadline(time.Now().Add(20 * time.Minute))
+				http.NewResponseController(w).SetWriteDeadline(time.Now().Add(20 * time.Minute))
+				controls[0].ServeHTTP(w, copy)
+				return
+			}
 			if r.URL.Path != "/password" || r.URL.RawQuery != "" {
 				jsonError(w, http.StatusNotFound, "NOT_FOUND", "ไม่พบคำสั่งควบคุมภายใน")
 				return

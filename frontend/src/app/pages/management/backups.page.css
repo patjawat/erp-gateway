@@ -1,0 +1,31 @@
+.backup-section { margin-top: 20px; }
+.backup-job { margin-bottom: 20px; }
+.backup-job p { margin: 10px 0; }
+.backup-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 0; }
+.backup-facts div { min-width: 0; }
+.backup-facts dt, .backup-inspection dt { color: var(--muted); margin-bottom: 6px; }
+.backup-facts dd, .backup-inspection dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.backup-facts small { display: block; margin-top: 5px; }
+.backup-recovery-line { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid var(--border); padding-top: 18px; }
+.backup-recovery-line div { max-width: 65ch; }
+.backup-recovery-line .button { flex-shrink: 0; }
+.backup-measure { max-width: 75ch; margin: 0; }
+.backup-address { overflow-wrap: anywhere; }
+.backup-remote-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.backup-work-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+.backup-work-row > input { width: 18px; height: 18px; flex-shrink: 0; margin-top: 3px; accent-color: var(--accent); }
+.backup-work-row > span { min-width: 0; overflow-wrap: anywhere; }
+.backup-work-row small { display: block; color: var(--muted); margin-top: 5px; }
+.backup-check { display: flex; align-items: flex-start; gap: 10px; line-height: 1.6; cursor: pointer; }
+.backup-check input { width: 18px; height: 18px; flex-shrink: 0; margin: 2px 0 0; accent-color: var(--accent); }
+.backup-fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 14px; min-width: 0; margin: 0; }
+.backup-fieldset legend { font-weight: 600; padding: 0 6px; }
+.backup-weekdays { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.backup-retention { margin-top: 14px; }
+.backup-inspection { display: grid; gap: 18px; margin: 0; }
+.backup-instructions { padding-left: 24px; display: grid; gap: 10px; line-height: 1.7; }
+details summary { cursor: pointer; color: var(--accent); padding: 5px 0; }
+@media (max-width: 760px) {
+  .backup-facts { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .backup-recovery-line { align-items: flex-start; flex-direction: column; }
+}

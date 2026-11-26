@@ -1,0 +1,227 @@
+<div class="page-heading">
+  <div>
+    <h1 data-page-heading tabindex="-1">สำรองข้อมูลและย้ายเครื่อง</h1>
+    <p class="page-subtitle">เก็บ Gateway พร้อมการตั้งค่าเดิม และเตรียมเครื่องใหม่ก่อนสลับใช้งาน</p>
+  </div>
+  <div class="page-actions">
+    <button class="button" type="button" [disabled]="loading()" (click)="refresh()">โหลดสถานะใหม่</button>
+    <button class="button button-primary" type="button" [disabled]="busy() || activeJob() || !data()?.tools_available" (click)="backUpNow()">สำรองข้อมูลตอนนี้</button>
+  </div>
+</div>
+@if (error()) { <p class="notice notice-error" role="alert">{{ error() }}</p> }
+@if (message()) { <p class="notice notice-success" role="status">{{ message() }}</p> }
+@if (activationAccepted()) { <div class="notice" role="status"><p>กำลังส่งต่อไปการตั้งค่าที่กู้คืน เซสชันผู้ดูแลเดิมจะสิ้นสุด หากเปิดหน้าใหม่แล้วยังไม่พร้อม ให้รอสักครู่แล้วลองอีกครั้ง</p><a class="button button-primary" [href]="repairRequired() ? '/setup/' : '/admin/'">{{ repairRequired() ? 'ไปต่ออายุใบรับรองที่กู้คืนมา' : 'ไปหน้าเข้าสู่ระบบจัดการ' }}</a></div> }
+@if (loading() && !data()) { <p class="loading" role="status">กำลังโหลดการสำรองข้อมูล…</p> }
+@if (data(); as status) {
+  @if (!status.tools_available) {
+    <p class="notice notice-warning" role="alert">เครื่องนี้ยังไม่มีเครื่องมือสำรองข้อมูลใน image กรุณา build หรืออัปเดต Gateway image ที่รองรับ ก่อนเริ่มสำรองและกู้คืน</p>
+  }
+  @if (healthWarning()) { <p class="notice notice-warning" role="alert">{{ healthWarning() }}</p> }
+  @if (job(); as current) {
+    <section class="panel backup-job" [attr.aria-busy]="activeJob()" aria-labelledby="backup-job-title">
+      <div class="row"><h2 id="backup-job-title">งานล่าสุด</h2><span class="badge" [class.badge-danger]="current.state === 'failed'" [class.badge-success]="current.state === 'completed' || current.state === 'succeeded'">{{ statusLabel(current.state) }}</span></div>
+      <p role="status" aria-live="polite">{{ phases[current.phase || ''] || (activeJob() ? 'กำลังดำเนินการ กรุณารอสักครู่' : statusLabel(current.state)) }}</p>
+      @if (activeJob()) { <div><button class="button button-small" type="button" [disabled]="busy() || current.phase === 'cancelling'" (click)="openCancelJob(current)">{{ current.phase === 'cancelling' ? 'กำลังยกเลิกงาน…' : 'ยกเลิกงานนี้' }}</button></div> }
+      @if (current.error) { <p class="notice notice-error" role="alert">{{ current.error }}</p> }
+      @if (current.backup_id && currentBackupAvailable(current.backup_id)) { <div class="row"><a class="button" [href]="'/admin/api/backups/' + current.backup_id + '/download'" download>ดาวน์โหลดไฟล์สำรองที่พร้อมแล้ว</a><button class="button" type="button" [disabled]="busy()" (click)="downloadKit(current.backup_id)">ชุดกู้คืนของไฟล์นี้</button></div><p class="help">ไฟล์ในเครื่องพร้อมใช้งานแยกจากการส่งขึ้น Google Drive จึงดาวน์โหลดได้ระหว่างที่กำลังอัปโหลดหรือเมื่อส่งขึ้น Drive ไม่สำเร็จ</p> }
+    </section>
+  }
+  <section class="panel stack backup-section" aria-labelledby="backup-protection-title">
+    <div class="row"><h2 id="backup-protection-title">ข้อมูลสำรองล่าสุด</h2><button class="button button-small" type="button" [disabled]="busy()" (click)="open('policy')">ตั้งค่าการสำรอง</button></div>
+    <dl class="backup-facts">
+      <div><dt>สำรองในเครื่อง</dt><dd>{{ timestamp(status.latest_local?.created_at) }}</dd><small class="muted">{{ status.latest_local ? size(status.latest_local.size) : 'กดสำรองข้อมูลตอนนี้เพื่อเริ่มต้น' }}</small></div>
+      <div><dt>สำรองนอกเครื่อง</dt><dd>{{ status.policy.destination === 'drive' ? timestamp(status.latest_offsite?.offsite_at || status.latest_offsite?.created_at) : 'ไม่ได้เปิดใช้' }}</dd><small class="muted">{{ status.drive.connected ? 'Google Drive เชื่อมต่อแล้ว' : 'ยังไม่เชื่อมต่อ Google Drive' }}</small></div>
+      <div><dt>รอบสำรองอัตโนมัติ</dt><dd>{{ status.policy.enabled ? scheduleLabel() : 'หยุดอยู่' }}</dd><small class="muted">รอบถัดไป: {{ nextRun() }}</small></div>
+    </dl>
+    <div class="backup-recovery-line">
+      <div><strong>เก็บชุดกู้คืนแยกจากไฟล์สำรอง</strong><p class="help">ชุดกู้คืนมีกุญแจเปิดไฟล์สำรอง หากสูญหายทุกสำเนาจะไม่สามารถเปิดข้อมูลได้ด้วยการรีเซ็ตรหัสผ่านผู้ดูแล ปุ่มนี้ให้ชุดปัจจุบัน ส่วนไฟล์เก่าให้ดาวน์โหลดชุดกู้คืนของรายการนั้นในประวัติ</p></div>
+      <button class="button" type="button" [disabled]="busy()" (click)="downloadKit()">ดาวน์โหลดชุดกู้คืน</button>
+    </div>
+    @if (!status.recovery_exported) { <p class="notice notice-warning">ยังไม่พบการดาวน์โหลดชุดกู้คืน กรุณาเก็บสำเนาไว้ในที่ปลอดภัยก่อนย้ายเครื่อง</p> }
+  </section>
+  <section class="panel stack backup-section" aria-labelledby="backup-migration-title">
+    <div class="row"><h2 id="backup-migration-title">ย้ายหรือกู้คืน Gateway</h2><span class="badge">{{ migrationLabel() }}</span></div>
+    <p class="muted backup-measure">นำเข้าไฟล์สำรอง หรือจับคู่กับเครื่องใหม่เพื่อโอนโดยตรง ข้อมูลรวมหน่วยงาน บัญชีผู้ดูแล ประวัติ และใบรับรอง Gateway ส่วนฐานข้อมูล ERP และกุญแจลงนาม CA ที่เก็บแยกบน Mac ต้องสำรองแยกต่างหาก</p>
+    <div class="page-actions">
+      <button class="button" type="button" [disabled]="busy() || activeJob() || !status.tools_available" (click)="open('restore')">นำเข้าไฟล์สำรอง</button>
+      <button class="button" type="button" [disabled]="busy() || activeJob() || !status.tools_available" (click)="open('cloudrestore')">กู้คืนจาก Google Drive</button>
+      <button class="button" type="button" [disabled]="busy() || activeJob() || !status.tools_available" (click)="open('send')">ย้ายไปเครื่องอื่น</button>
+      <button class="button" type="button" [disabled]="busy() || activeJob() || !status.tools_available" (click)="open('receive')">เปิดรับการย้ายข้อมูล</button>
+      <button class="button" type="button" [disabled]="busy()" (click)="open('restoredwork')">งานค้างหลังการกู้คืน</button>
+    </div>
+    @if (status.migration?.destination_url) { <p class="help">ปลายทาง: <span class="backup-address">{{ status.migration?.destination_url }}</span></p> }
+    @if (status.migration && !['idle', 'cancelled', 'retired', 'active'].includes(status.migration.state)) {
+      <div class="notice notice-warning">
+        <p>เตรียมโดเมนหรือ reverse proxy ให้ชี้ไปเครื่องใหม่ การโอนข้อมูลไม่ได้เปลี่ยนที่อยู่ที่ Mobile เรียกโดยอัตโนมัติ เครื่องเดิมจะไม่กลับมาทำงานเองหลังเก็บข้อมูลชุดสุดท้าย</p>
+        <div class="row">
+          @if (status.migration.retry_available) { <button class="button button-primary" type="button" [disabled]="busy() || activeJob()" (click)="resumeMigration()">ส่งข้อมูลต่อจากจุดค้าง</button> }
+          @if (status.migration.direction === 'sender' && ['prepared', 'ready', 'paired'].includes(status.migration.state)) { <button class="button button-primary" type="button" [disabled]="busy() || activeJob()" (click)="open('finalize')">เก็บข้อมูลล่าสุดและเตรียมสลับเครื่อง</button> }
+          @if (status.migration.direction === 'receiver' && ['final_ready', 'received_final'].includes(status.migration.state)) { <button class="button button-primary" type="button" [disabled]="busy() || activeJob()" (click)="open('activate')">เปิดใช้ข้อมูลที่ย้ายมา</button> }
+          @if (status.migration.direction === 'sender' && status.migration.state === 'final_ready') { <button class="button" type="button" [disabled]="busy() || activeJob()" (click)="open('retire')">ปิดงานย้ายเครื่องเดิม</button> }
+          <button class="button" type="button" [disabled]="busy() || activeJob()" (click)="open('cancel')">ยกเลิกการย้าย</button>
+        </div>
+      </div>
+    }
+  </section>
+  <section class="panel stack backup-section" aria-labelledby="backup-drive-title">
+    <div class="row"><h2 id="backup-drive-title">Google Drive ส่วนตัว</h2><span class="badge" [class.badge-success]="status.drive.connected">{{ status.drive.connected ? 'เชื่อมต่อแล้ว' : 'ยังไม่เชื่อมต่อ' }}</span></div>
+    <p class="muted backup-measure">สำรองข้อมูลเข้ารหัสนอกเครื่องตามเวลาที่ตั้งไว้ การสำรองและดาวน์โหลดด้วยตัวเองยังใช้ได้เมื่อไม่ได้เชื่อมต่อ Drive</p>
+    <div><button class="button" type="button" [disabled]="busy()" (click)="open('drive')">{{ status.drive.connected ? 'จัดการการเชื่อมต่อ Drive' : 'เชื่อมต่อ Google Drive' }}</button></div>
+  </section>
+}
+<section class="panel stack backup-section" aria-labelledby="backup-history-title">
+  <div class="row"><h2 id="backup-history-title">ประวัติการสำรอง</h2><span class="muted">{{ formatCount(list.total()) }} รายการ</span></div>
+  <p class="help">แต่ละไฟล์มีข้อมูลถึงเวลาที่เก็บชุดนั้น ข้อมูลที่เปลี่ยนหลังจากนั้นต้องเก็บเพิ่มเติมก่อนย้ายเครื่อง</p>
+  @if (list.error()) { <div class="notice notice-error" role="alert"><p>{{ list.error() }}</p><button class="button button-small" type="button" [disabled]="list.loading()" (click)="list.more()">ลองโหลดอีกครั้ง</button></div> }
+  @if (!list.loading() && !list.error() && !list.items().length) { <div class="empty-state"><h3>ยังไม่มีข้อมูลสำรอง</h3><p>กด “สำรองข้อมูลตอนนี้” แล้วดาวน์โหลดไฟล์พร้อมชุดกู้คืนเพื่อเริ่มเก็บสำเนาแรก</p></div> }
+  @if (list.items().length) {
+    <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">เวลาที่เก็บข้อมูล</th><th scope="col">สถานะ</th><th scope="col">ขนาด</th><th scope="col">สำเนาบน Drive</th><th scope="col">ไฟล์สำรอง</th><th scope="col">การเก็บรักษา</th></tr></thead><tbody>
+      @for (record of list.items(); track record.id) {
+        <tr><td>{{ timestamp(record.created_at) }}</td><td><span class="badge" [class.badge-danger]="record.status === 'failed'">{{ statusLabel(record.status) }}</span>@if (record.error) { <small>{{ record.error }}</small> }</td><td>{{ size(record.size) }}</td><td>{{ record.remote_snapshot_id ? timestamp(record.offsite_at) : record.offsite_at ? 'ลบสำเนาแล้ว' : 'ยังไม่มีสำเนา' }}</td><td>@if (downloadable(record)) { <div class="row"><a class="button button-small" [href]="downloadURL(record)" download [attr.aria-label]="'ดาวน์โหลดไฟล์สำรอง ' + timestamp(record.created_at)">ดาวน์โหลด</a><button class="button button-small" type="button" [disabled]="busy()" (click)="downloadKit(record)" [attr.aria-label]="'ดาวน์โหลดชุดกู้คืนสำหรับไฟล์สำรอง ' + timestamp(record.created_at)">ชุดกู้คืนของไฟล์นี้</button></div>@if (record.recovery_key_id && data()?.recovery_key_id && record.recovery_key_id !== data()?.recovery_key_id) { <small>กุญแจต่างจากชุดปัจจุบัน ใช้ชุดกู้คืนของรายการนี้</small> } } @else if (record.remote_snapshot_id) { <button class="button button-small" type="button" [disabled]="busy() || activeJob()" (click)="restoreDrive(record.remote_snapshot_id)">กู้คืนจาก Drive</button> } @else { <span class="muted">ยังไม่พร้อม</span> }</td><td>@if (record.pinned) { <span class="badge badge-warning">เก็บชุดนี้ไว้</span> }<div class="row"><button class="button button-small" type="button" [disabled]="busy()" (click)="togglePin(record)">{{ record.pinned ? 'เลิกเก็บไว้' : 'เก็บชุดนี้ไว้' }}</button><button class="button button-small" type="button" [disabled]="busy() || record.pinned" (click)="openDelete(record)">ลบชุดสำรอง</button></div></td></tr>
+      }
+    </tbody></table></div>
+  }
+  @if (list.loading()) { <p class="loading" role="status">กำลังโหลดประวัติ…</p> }
+  @if (list.hasMore()) { <div gwLoadMore (loadMore)="list.more()" aria-hidden="true"></div><div><button class="button" type="button" [disabled]="list.loading()" (click)="list.more()">{{ list.loading() ? 'กำลังโหลด…' : 'โหลดประวัติเพิ่ม' }}</button></div> }
+  @if (!list.loading() && list.items().length && !list.hasMore()) { <p class="help">แสดงประวัติครบแล้ว</p> }
+</section>
+
+@if (modal(); as kind) {
+  <gw-modal [title]="kind === 'policy' ? 'ตั้งค่าการสำรองข้อมูล' : kind === 'drive' ? 'เชื่อมต่อ Google Drive' : kind === 'cloudrestore' ? 'กู้คืนจาก Google Drive' : kind === 'restore' ? 'นำเข้าข้อมูล Gateway เดิม' : kind === 'send' ? 'ย้ายไปเครื่องอื่น' : kind === 'receive' ? 'เปิดรับการย้ายข้อมูล' : kind === 'finalize' ? 'เก็บข้อมูลล่าสุดและเตรียมสลับเครื่อง' : kind === 'activate' ? 'เปิดใช้งานเครื่องปลายทาง' : kind === 'canceljob' ? 'ยกเลิกงานที่กำลังทำ' : kind === 'retire' ? 'ปิดงานย้ายเครื่องเดิม' : kind === 'restoredwork' ? 'งานค้างหลังการกู้คืน' : kind === 'delete' ? 'ลบข้อมูลสำรอง' : 'ยกเลิกการย้ายเครื่อง'" [busy]="busy()" [dirty]="dirty()" (closed)="close()">
+    @if (modalError()) { <p class="notice notice-error" role="alert">{{ modalError() }}</p> }
+    @if (kind === 'canceljob' && cancelJobTarget(); as target) {
+      <div class="stack"><p>ยกเลิกเฉพาะงานที่เลือก: {{ phases[target.phase || ''] || 'งานสำรองหรือย้ายข้อมูลที่กำลังทำ' }}</p><p class="notice notice-warning">ระบบจะหยุดงานอย่างปลอดภัย ไฟล์สำรองที่ตรวจสอบเสร็จแล้วยังดาวน์โหลดได้ การยกเลิกงานย้ายหรือกู้คืนไม่สั่งให้เครื่องต้นทางที่พักไว้กลับมารับข้อมูลเอง ให้ตรวจสถานะการย้ายก่อนดำเนินการต่อ</p><p class="help">การยกเลิกงานนี้ไม่ปิดรอบสำรองอัตโนมัติ หากต้องการหยุดงานในอนาคต ให้ปิดการสำรองอัตโนมัติในหน้าตั้งค่า</p><label class="backup-check"><input type="checkbox" name="cancelJobConfirmed" [(ngModel)]="cancelJobConfirmed" [disabled]="busy()">ฉันต้องการยกเลิกงานนี้และจะตรวจสถานะก่อนเริ่มงานใหม่</label><div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ทำงานต่อ</button><button class="button button-danger" type="button" [disabled]="busy() || !cancelJobConfirmed" (click)="cancelRunningJob()">{{ busy() ? 'กำลังส่งคำขอ…' : 'ยืนยันยกเลิกงานนี้' }}</button></div></div>
+    }
+    @if (kind === 'retire') {
+      <div class="stack"><p>ปิดงานหลังเครื่องใหม่รับข้อมูลและเปิดให้บริการเรียบร้อยแล้ว จากนั้นจึงจัดการชุดสำรองที่เก็บไว้สำหรับการย้ายครั้งนี้ได้</p><p class="notice notice-warning">เครื่องเดิมจะยังคงหยุดให้บริการและจะไม่กลับมารับข้อมูล การปิดงานนี้ไม่สั่งหยุดเครื่องใหม่และไม่ย้ายข้อมูลกลับ</p><label class="backup-check"><input type="checkbox" name="destinationActiveConfirmed" [(ngModel)]="destinationActiveConfirmed" [disabled]="busy()">ฉันตรวจแล้วว่า Mobile ใช้งานผ่านเครื่องใหม่ได้ และต้องการปิดงานย้ายที่เครื่องเดิม</label><div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ยังไม่ปิดงาน</button><button class="button button-primary" type="button" [disabled]="busy() || !destinationActiveConfirmed" (click)="retireMigration()">ยืนยันปิดงานย้ายเครื่องเดิม</button></div></div>
+    }
+    @if (kind === 'delete' && deleteTarget(); as record) {
+      <div class="stack"><p>ชุดสำรองที่เก็บข้อมูลถึง {{ timestamp(record.created_at) }} ขนาด {{ size(record.size) }}</p><label class="field">เลือกสำเนาที่จะลบ<select name="deleteDestination" [(ngModel)]="deleteDestination" (ngModelChange)="deleteConfirmed = false" [disabled]="busy()"><option value="local" [disabled]="record.local_available === false">ในเครื่องเท่านั้น</option><option value="drive" [disabled]="!record.remote_snapshot_id">Google Drive เท่านั้น</option><option value="all" [disabled]="!record.remote_snapshot_id">ทั้งในเครื่องและ Google Drive</option></select></label><div class="notice notice-warning">@if (deleteDestination === 'local') { <p>ลบเฉพาะไฟล์สำรองในเครื่องนี้ สำเนาบน Google Drive ที่มีอยู่จะยังคงใช้กู้คืนได้</p> } @else if (deleteDestination === 'drive') { <p>ลบเฉพาะสำเนาบน Google Drive ไฟล์สำรองในเครื่องที่มีอยู่จะยังคงใช้กู้คืนได้</p> } @else { <p>ลบสำเนาทั้งในเครื่องและ Google Drive ชุดนี้จะไม่เหลือให้กู้คืนจากสองปลายทางนี้</p> }<p>ระบบจะป้องกันชุดล่าสุดที่จำเป็น ชุดที่กำลังใช้ย้ายเครื่อง และไฟล์ที่กำลังดาวน์โหลด ไฟล์ที่คุณดาวน์โหลดเก็บแยกไว้จะไม่ถูกลบ</p></div><label class="backup-check"><input type="checkbox" name="deleteConfirmed" [(ngModel)]="deleteConfirmed" [disabled]="busy()">ฉันตรวจแล้วและต้องการลบ{{ deleteScopeLabel() }}ของชุดนี้</label><div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">เก็บไว้ก่อน</button><button class="button button-danger" type="button" [disabled]="busy() || !deleteConfirmed || !deleteDestinationAllowed()" (click)="deleteBackup()">{{ busy() ? 'กำลังลบ…' : 'ยืนยันลบตามขอบเขตนี้' }}</button></div></div>
+    }
+    @if (kind === 'restoredwork') {
+      <div class="stack"><p class="muted">งานที่กู้คืนมาจะพักไว้ก่อน เลือกตรวจและส่งต่อเฉพาะงานที่จำเป็น งานอัปเดตเดิมยกเลิกได้เท่านั้น</p><div class="row"><span class="muted">{{ formatCount(restoredWork.total()) }} งาน เลือกแล้ว {{ formatCount(selectedWork().length) }} งาน</span><button class="button button-small" type="button" [disabled]="busy() || !restoredWork.items().length" (click)="selectLoadedWork()">เลือกงานที่แสดง (สูงสุด 100)</button></div>
+        @if (restoredWork.error()) { <div class="notice notice-error" role="alert"><p>{{ restoredWork.error() }}</p><button class="button button-small" type="button" [disabled]="restoredWork.loading()" (click)="restoredWork.more()">ลองโหลดอีกครั้ง</button></div> }
+        @if (!restoredWork.loading() && !restoredWork.error() && !restoredWork.items().length) { <p class="muted">ไม่มีงานที่ต้องตรวจหลังการกู้คืน</p> }
+        @for (work of restoredWork.items(); track work.id) {
+          <label class="backup-work-row"><input type="checkbox" [checked]="selected(work)" [disabled]="busy() || !workSelectable(work)" (change)="toggleWork(work, $any($event.target).checked)"><span><strong>{{ work.kind === 'notification' ? 'งานแจ้งเตือน' : 'งานอัปเดตเดิม' }}</strong><small>{{ workStatusLabel(work) }}</small><small>หน่วยงาน {{ work.hospital_id || 'ส่วนกลาง' }} · {{ timestamp(work.created_at) }}</small>@if (work.event_id) { <small>รายการ {{ work.event_id }}</small> }</span></label>
+        }
+        @if (restoredWork.loading()) { <p class="loading" role="status">กำลังโหลดงานค้าง…</p> }
+        @if (restoredWork.hasMore()) { <div gwLoadMore (loadMore)="restoredWork.more()" aria-hidden="true"></div><div><button class="button" type="button" [disabled]="restoredWork.loading()" (click)="restoredWork.more()">โหลดงานเพิ่ม</button></div> }
+        <label class="field">ดำเนินการกับงานที่เลือก<select name="workAction" [(ngModel)]="workAction" (ngModelChange)="workConfirmed = false" [disabled]="busy()"><option value="cancel">ยกเลิกงานที่เลือก</option><option value="resume" [disabled]="!selectedWorkCanResume()">ส่งต่องานแจ้งเตือนที่เลือก</option></select></label>
+        @if (workAction === 'resume') { <p class="notice notice-warning">งานแจ้งเตือนอาจเคยส่งไปก่อนเครื่องเดิมหยุด การส่งต่ออาจทำให้ผู้ใช้ได้รับข้อความซ้ำ กรุณาตรวจสอบก่อนยืนยัน</p> }
+        <label class="backup-check"><input type="checkbox" name="workConfirmed" [(ngModel)]="workConfirmed" [disabled]="busy()">{{ workAction === 'resume' ? 'ฉันตรวจงานแล้วและยอมรับความเป็นไปได้ที่จะส่งแจ้งเตือนซ้ำ' : 'ฉันต้องการยกเลิกงานที่เลือก โดยไม่ส่งงานเหล่านี้ออกไป' }}</label>
+        <div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ปิด</button><button class="button" [class.button-danger]="workAction === 'cancel'" [class.button-primary]="workAction === 'resume'" type="button" [disabled]="busy() || !selectedWork().length || selectedWork().length > 100 || !workConfirmed || (workAction === 'resume' && !selectedWorkCanResume())" (click)="applyRestoredWork()">{{ busy() ? 'กำลังดำเนินการ…' : workAction === 'resume' ? 'ยืนยันส่งต่องานแจ้งเตือน' : 'ยืนยันยกเลิกงานที่เลือก' }}</button></div>
+      </div>
+    }
+    @if (kind === 'policy') {
+      <form class="stack" (ngSubmit)="savePolicy()" [attr.aria-busy]="busy()">
+        <label class="backup-check"><input type="checkbox" name="enabled" [(ngModel)]="policy.enabled" [disabled]="busy()">เปิดสำรองข้อมูลอัตโนมัติ</label>
+        <p class="help">หยุดอัตโนมัติได้โดยไม่ลบข้อมูลเดิม ปุ่มสำรองข้อมูลตอนนี้ยังใช้ได้</p>
+        <div class="form-grid">
+          <label class="field">รูปแบบเวลา<select name="kind" [(ngModel)]="policy.schedule.kind" (ngModelChange)="scheduleChanged()" [disabled]="busy()"><option value="interval">ทุกช่วงเวลา</option><option value="daily">ทุกวัน</option><option value="weekly">เลือกวันในสัปดาห์</option></select></label>
+          @if (policy.schedule.kind === 'interval') { <label class="field">รอบสำรอง (นาที)<input type="number" name="interval" [(ngModel)]="policy.schedule.interval_minutes" (ngModelChange)="scheduleChanged()" min="1" max="10080" step="1" required [disabled]="busy()"><span class="help">ค่าเริ่มต้น 15 นาที ปรับได้สูงสุด 10080 นาที (7 วัน)</span></label> }
+          @else { <label class="field">เวลาสำรอง<input type="time" name="time" [(ngModel)]="policy.schedule.time" required [disabled]="busy()"></label> }
+          <label class="field">เขตเวลา<input name="timezone" [(ngModel)]="policy.schedule.timezone" required maxlength="100" [disabled]="busy()"></label>
+          <label class="field">ปลายทาง<select name="destination" [(ngModel)]="policy.destination" [disabled]="busy()"><option value="local">เก็บในเครื่อง</option><option value="drive" [disabled]="!data()?.drive?.connected">ในเครื่องและ Google Drive</option></select></label>
+        </div>
+        @if (policy.schedule.kind === 'weekly') { <fieldset class="backup-fieldset"><legend>วันที่สำรอง</legend><div class="backup-weekdays">@for (day of weekdays; track $index) { <label class="backup-check"><input type="checkbox" [name]="'day-' + $index" [checked]="policy.schedule.weekdays.includes($index)" (change)="toggleDay($index, $any($event.target).checked)" [disabled]="busy()">{{ day }}</label> }</div></fieldset> }
+        @for (destination of ['local', 'drive']; track destination) {
+          <fieldset class="backup-fieldset"><legend>{{ destination === 'local' ? 'จำนวนชุดที่เก็บในเครื่อง' : 'จำนวนชุดที่เก็บบน Drive' }}</legend>
+            @let retention = destination === 'local' ? policy.local_retention : policy.drive_retention;
+            <label class="backup-check"><input type="checkbox" [name]="destination + '-keep-all'" [(ngModel)]="retention.keep_all" [disabled]="busy()">เก็บจนกว่าจะลบเอง</label>
+            @if (!retention.keep_all) { <div class="form-grid backup-retention">
+              <label class="field">ชุดล่าสุด<input type="number" [name]="destination + '-latest'" [(ngModel)]="retention.latest" min="0" max="10000" step="1" required [disabled]="busy()"></label>
+              <label class="field">รายวัน<input type="number" [name]="destination + '-daily'" [(ngModel)]="retention.daily" min="0" max="3660" step="1" required [disabled]="busy()"></label>
+              <label class="field">รายสัปดาห์<input type="number" [name]="destination + '-weekly'" [(ngModel)]="retention.weekly" min="0" max="520" step="1" required [disabled]="busy()"></label>
+              <label class="field">รายเดือน<input type="number" [name]="destination + '-monthly'" [(ngModel)]="retention.monthly" min="0" max="120" step="1" required [disabled]="busy()"></label>
+            </div> }
+          </fieldset>
+        }
+        <label class="backup-check"><input type="checkbox" name="alerts" [(ngModel)]="policy.alerts_enabled" [disabled]="busy()">แจ้งปัญหาการสำรองข้อมูลใน Gateway</label>
+        @if (policy.alerts_enabled) { <label class="field">แจ้งเมื่อไม่มีสำเนาสำเร็จนานเกิน (นาที)<input type="number" name="stale" [(ngModel)]="policy.stale_minutes" [min]="scheduleGap() || 1" max="525600" step="1" required [disabled]="busy()"><span class="help">อย่างน้อย {{ formatCount(scheduleGap()) }} นาทีตามระยะห่างรอบสำรอง ค่าแนะนำ {{ formatCount(scheduleGap() * 3) }} นาที</span></label> }
+        <p class="help">ระบบเก็บอย่างน้อยหนึ่งชุดที่ตรวจสอบแล้ว และเก็บชุดที่กำลังใช้ย้ายเครื่องไว้จนกว่าจะเสร็จ</p>
+        <div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ยกเลิก</button><button class="button button-primary" type="submit" [disabled]="busy()">{{ busy() ? 'กำลังบันทึก…' : 'บันทึกการสำรอง' }}</button></div>
+      </form>
+    }
+    @if (kind === 'drive') {
+      <form class="stack" (ngSubmit)="connectDrive()" [attr.aria-busy]="busy()">
+        <p class="muted">ใช้บัญชี Gmail ของคุณและ OAuth client ที่ลงทะเบียนไว้ เชื่อมต่อครั้งแรกผ่านหน้าอนุญาตของ Google</p>
+        <details><summary>เตรียมการเชื่อมต่อ Google Drive</summary><ol class="backup-instructions"><li>เปิด Google Cloud Console แล้วเปิดใช้งาน Google Drive API</li><li>สร้าง OAuth client แบบ Web application และลงทะเบียน Callback URL ด้านล่างให้ตรงกัน</li><li>ใช้ HTTPS บนเซิร์ฟเวอร์ หรือ localhost บน Mac/SSH tunnel ไม่ใช้ Callback URL เป็น HTTP ของ IP ภายใน</li><li>ตั้งค่า OAuth consent ให้ใช้งานต่อเนื่อง การทิ้งแอปภายนอกไว้ใน Testing อาจทำให้สิทธิ์หมดอายุหลัง 7 วัน</li><li>กรอก Client ID และ Client secret แล้วอนุญาตเข้าถึงโฟลเดอร์สำรองของ Gateway</li></ol></details>
+        @if (data()?.drive?.connected) { <p class="notice notice-success">เชื่อมต่อ Drive แล้ว การเชื่อมต่อใหม่จะไม่ลบไฟล์สำรองเดิม</p> }
+        @if (!authorizationURL()) {
+          <label class="field">Google Client ID<input name="clientID" [(ngModel)]="clientID" autocomplete="off" required [disabled]="busy()"></label>
+          <label class="field">Google Client secret<input type="password" name="clientSecret" [(ngModel)]="clientSecret" autocomplete="off" required [disabled]="busy()"></label>
+          <label class="field">Callback URL<input type="url" name="redirectURL" [(ngModel)]="redirectURL" required [disabled]="busy()"><span class="help">ต้องตรงกับ Authorized redirect URI ใน Google Cloud</span></label>
+        } @else { <div class="notice notice-warning"><p>เปิดหน้า Google เพื่อยืนยันบัญชี หลังอนุญาตแล้วกลับมาหน้านี้และกดโหลดสถานะใหม่</p><a class="button button-primary" [href]="authorizationURL()" target="_blank" rel="noopener noreferrer">ไปอนุญาตที่ Google</a></div> }
+        <div class="modal-actions">@if (data()?.drive?.connected) { <button class="button button-danger" type="button" [disabled]="busy()" (click)="disconnectDrive()">ยกเลิกการเชื่อมต่อ</button> }<button class="button" type="button" [disabled]="busy()" (click)="close()">ปิด</button>@if (!authorizationURL()) { <button class="button button-primary" type="submit" [disabled]="busy()">{{ busy() ? 'กำลังเตรียม…' : 'เริ่มเชื่อมต่อ Drive' }}</button> }</div>
+      </form>
+    }
+    @if (kind === 'cloudrestore') {
+      <div class="stack"><p class="muted">กู้คืนได้แม้ไม่มีเครื่องเดิม ใช้ชุดกู้คืนที่เก็บแยกไว้และลงชื่อเข้า Google บัญชีเจ้าของข้อมูล</p>
+        @if (!data()?.drive?.connected && !data()?.drive?.recovery_ready) {
+          <form class="stack" (ngSubmit)="recoverDrive()">
+            <label class="field">ไฟล์ชุดกู้คืน<input type="file" name="cloudKitFile" accept="application/json,.json" (change)="readCloudKit($event)" [disabled]="busy()"></label>
+            <label class="field">หรือวางเนื้อหาชุดกู้คืน<textarea name="cloudKit" [(ngModel)]="recoveryKit" rows="4" autocomplete="off" spellcheck="false" [disabled]="busy()"></textarea><span class="help">ชุดนี้มีกุญแจและข้อมูลเชื่อมต่อ เก็บเป็นความลับและไม่วางในไฟล์สำรองบน Drive</span></label>
+            <label class="field">Callback URL<input type="url" name="cloudRedirectURL" [(ngModel)]="redirectURL" required [disabled]="busy()"><span class="help">ใช้ HTTPS หรือ localhost ที่ลงทะเบียนไว้กับ OAuth client เดิม</span></label>
+            <div><button class="button button-primary" type="submit" [disabled]="busy()">{{ busy() ? 'กำลังเตรียม…' : 'ยืนยันชุดกู้คืนและเชื่อมต่อ Google' }}</button></div>
+          </form>
+        }
+        @if (authorizationURL()) { <div class="notice notice-warning"><p>อนุญาตบัญชี Google แล้วกลับมากดตรวจสถานะด้านล่าง</p><a class="button button-primary" [href]="authorizationURL()" target="_blank" rel="noopener noreferrer">ไปอนุญาตที่ Google</a></div> }
+        <div><button class="button" type="button" [disabled]="busy() || loading() || driveList.loading()" (click)="refreshDriveCopies()">ตรวจสถานะและโหลดสำเนา</button></div>
+        @if (driveList.error()) { <div class="notice notice-error" role="alert"><p>{{ driveList.error() }}</p><button class="button button-small" type="button" [disabled]="driveList.loading()" (click)="driveList.more()">ลองโหลดอีกครั้ง</button></div> }
+        @if (data()?.drive?.connected || data()?.drive?.recovery_ready) {
+          <h3>เลือกสำเนาบน Drive</h3><p class="help">วันที่ด้านล่างเป็นเวลาบันทึกสำเนาบน Drive ระบบจะแสดงเวลาของข้อมูลจริงหลังตรวจไฟล์ ก่อนยืนยันเปิดใช้</p>
+          @if (!driveList.loading() && !driveList.error() && !driveList.items().length) { <p class="muted">ยังไม่พบสำเนาในโฟลเดอร์สำรองของบัญชีนี้</p> }
+          @for (snapshot of driveList.items(); track snapshot.id) { <div class="backup-remote-row"><span>{{ timestamp(snapshot.created_at) }}</span><button class="button button-small" type="button" [disabled]="busy() || activeJob()" (click)="restoreDrive(snapshot.id)" [attr.aria-label]="'ตรวจและเตรียมกู้คืนข้อมูล ' + timestamp(snapshot.created_at)">ตรวจและเตรียมกู้คืน</button></div> }
+          @if (driveList.loading()) { <p class="loading" role="status">กำลังโหลดสำเนาจาก Drive…</p> }
+          @if (driveList.hasMore()) { <div gwLoadMore (loadMore)="driveList.more()" aria-hidden="true"></div><div><button class="button" type="button" [disabled]="driveList.loading()" (click)="driveList.more()">โหลดสำเนาเพิ่ม</button></div> }
+        }
+        <div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ปิด</button></div>
+      </div>
+    }
+    @if (kind === 'restore') {
+      @if (inspected(); as info) {
+        <div class="stack"><p class="notice" role="status">ตรวจไฟล์สำรองแล้ว ข้อมูลจริงยังไม่ถูกแทนที่</p><dl class="backup-inspection"><div><dt>เวลาที่เก็บข้อมูล</dt><dd>{{ timestamp(info.created_at) }}</dd></div><div><dt>ข้อมูลที่จะนำเข้า</dt><dd>{{ summary() }}</dd></div></dl>
+          @if (requiresRepair(info)) { <p class="notice notice-warning">ใบรับรอง client หรือ CA ในชุดนี้ต้องซ่อมหรือต่ออายุ กู้คืนข้อมูลได้ แต่ต้องแก้ใบรับรองในหน้า Setup ก่อนเชื่อมต่อ API โรงพยาบาล</p> }
+          <label class="field">ที่อยู่ Gateway บนเครื่องนี้<input type="url" name="restoreURL" [(ngModel)]="restoreURL" [disabled]="busy()" required><span class="help">ตรวจ HTTPS หรือโหมด HTTP ภายในที่อนุญาต พร้อมเตรียมโดเมน/reverse proxy ให้ Mobile เข้าถึงได้</span></label>
+          <p class="notice notice-warning">การเปิดใช้จะแทนที่ข้อมูล Gateway บนเครื่องนี้ด้วยชุดที่เลือก ระบบจะเก็บข้อมูลเดิมไว้สำหรับการกู้คืน งานแจ้งเตือนค้างจะไม่ถูกส่งซ้ำทันที</p>
+          <label class="backup-check"><input type="checkbox" name="sourceStopped" [(ngModel)]="sourceStopped" [disabled]="busy()">ฉันหยุดเครื่องต้นทางแล้ว หรือเครื่องต้นทางไม่สามารถทำงานได้</label>
+          <div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ปิดไว้ก่อน</button><button class="button button-primary" type="button" [disabled]="busy() || !sourceStopped || activeJob()" (click)="activateRestore()">{{ busy() ? 'กำลังเปิดใช้…' : 'ยืนยันและเปิดใช้งาน' }}</button></div>
+        </div>
+      } @else {
+        <form class="stack" (ngSubmit)="importBackup()" [attr.aria-busy]="busy()">
+          <p class="muted">เลือกไฟล์สำรองครบชุดที่ Gateway ดาวน์โหลดให้ ระบบจะตรวจสอบก่อนเปลี่ยนข้อมูลบนเครื่องนี้</p>
+          <label class="field">ไฟล์สำรอง<input type="file" name="backupFile" (change)="selectFile($event)" required [disabled]="busy() || activeJob()"></label>
+          <label class="field">ไฟล์ชุดกู้คืน (ถ้ามี)<input type="file" name="kitFile" accept="application/json,.json" (change)="readKit($event)" [disabled]="busy() || activeJob()"><span class="help">เลือกชุดกู้คืนเพื่อเติมกุญแจ หรือกรอกกุญแจด้านล่าง</span></label>
+          <label class="field">กุญแจกู้คืน<input type="password" name="recoverySecret" [(ngModel)]="recoverySecret" autocomplete="off" required [disabled]="busy() || activeJob()"></label>
+          @if (activeJob()) { <p class="notice" role="status">{{ phases[job()?.phase || ''] || 'กำลังตรวจและเตรียมข้อมูล กรุณารอ' }}</p> }
+          <div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ปิด</button><button class="button button-primary" type="submit" [disabled]="busy() || activeJob()">{{ busy() ? 'กำลังส่งไฟล์…' : 'ตรวจไฟล์และเตรียมนำเข้า' }}</button></div>
+        </form>
+      }
+    }
+    @if (kind === 'send') {
+      <form class="stack" (ngSubmit)="send()" [attr.aria-busy]="busy()"><p class="muted">เปิด “รับการย้ายข้อมูล” บนเครื่องปลายทางก่อน แล้วกรอกที่อยู่และรหัสจับคู่ที่ได้รับ เครื่องนี้ยังให้บริการระหว่างส่งข้อมูลรอบแรก</p>
+        <label class="field">URL เครื่องปลายทาง<input type="url" name="destinationURL" [(ngModel)]="destinationURL" placeholder="https://gateway-new.example.org" autocomplete="off" required [disabled]="busy()"></label>
+        <label class="field">รหัสจับคู่ใช้ครั้งเดียว<input type="password" name="pairingCode" [(ngModel)]="pairingCode" autocomplete="off" required [disabled]="busy()"></label>
+        <label class="backup-check"><input type="checkbox" name="allowPrivate" [(ngModel)]="allowPrivate" [disabled]="busy()">อนุญาตเชื่อมต่อ IP ภายในของเครื่องปลายทางที่ฉันดูแล</label>
+        <p class="help">ต้นทางต้องเชื่อมต่อปลายทางได้ผ่านเครือข่าย และตรวจใบ HTTPS ของปลายทางผ่านก่อนเริ่มโอน</p>
+        <div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ยกเลิก</button><button class="button button-primary" type="submit" [disabled]="busy()">{{ busy() ? 'กำลังจับคู่…' : 'ตรวจสอบและเริ่มโอน' }}</button></div>
+      </form>
+    }
+    @if (kind === 'receive') {
+      <div class="stack"><p class="muted">เปิดช่องทางรับข้อมูลชั่วคราว แล้วนำรหัสจับคู่ไปกรอกที่เครื่องต้นทาง ข้อมูลที่รับมาจะถูกตรวจและพักไว้ก่อนเปิดใช้</p>
+        @if (receiving(); as receiver) { <label class="field">รหัสจับคู่<input readonly [value]="receiver.code" autocomplete="off" aria-describedby="receiver-expiry"></label><p class="help" id="receiver-expiry">ใช้ได้ถึง {{ timestamp(receiver.expires_at) }} รหัสนี้ใช้รับการย้ายข้อมูลเท่านั้น ไม่ใช่รหัสผ่านผู้ดูแล</p><p class="notice notice-warning">ให้รหัสนี้เฉพาะผู้ดูแลเครื่องต้นทาง และปิดหน้าต่างเมื่อคัดลอกแล้ว</p> }
+        <div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ปิด</button>@if (!receiving()) { <button class="button button-primary" type="button" [disabled]="busy()" (click)="receive()">{{ busy() ? 'กำลังเปิดรับ…' : 'สร้างรหัสรับการย้ายข้อมูล' }}</button> }</div>
+      </div>
+    }
+    @if (kind === 'finalize') {
+      <div class="stack"><p>ระบบจะพักรับข้อมูลบนเครื่องนี้ รอให้งานปัจจุบันเสร็จ แล้วเก็บและส่งข้อมูลชุดสุดท้ายไปเครื่องใหม่</p><p class="notice notice-warning">ตรวจว่าเครื่องใหม่พร้อม และเตรียมการสลับโดเมน/reverse proxy แล้ว เครื่องเดิมจะไม่กลับมาทำงานเองเมื่อขาดการเชื่อมต่อ หากต้องยกเลิกต้องตรวจว่าเครื่องใหม่ยังไม่เปิดใช้งานก่อน</p><div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ยังไม่สลับ</button><button class="button button-primary" type="button" [disabled]="busy()" (click)="finalize()">พักเครื่องเดิมและเก็บข้อมูลล่าสุด</button></div></div>
+    }
+    @if (kind === 'activate') {
+      <div class="stack"><p>เปิดใช้งานข้อมูลชุดสุดท้ายที่ตรวจสอบแล้วบนเครื่องนี้ เตรียมให้โดเมนหรือ reverse proxy ส่ง Mobile มาที่เครื่องนี้</p><label class="field">ที่อยู่ Gateway ใหม่ (ถ้าต้องการเปลี่ยน)<input type="url" name="migrationPublicURL" [(ngModel)]="restoreURL" [disabled]="busy()" placeholder="เว้นว่างเพื่อใช้ที่อยู่เดิม"><span class="help">เว้นว่างเพื่อรักษาที่อยู่เดิมจากข้อมูลที่ย้ายมา</span></label><label class="backup-check"><input type="checkbox" name="migrationSourceStopped" [(ngModel)]="sourceStopped" [disabled]="busy()">ฉันตรวจแล้วว่าเครื่องต้นทางหยุดรับข้อมูล</label><p class="help">เมื่อเครื่องนี้เริ่มรับข้อมูลใหม่ จะไม่ย้อนกลับไปใช้ข้อมูลเก่าอัตโนมัติ</p><div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">ยังไม่เปิดใช้</button><button class="button button-primary" type="button" [disabled]="busy() || !sourceStopped" (click)="activateMigration()">ยืนยันเปิดใช้เครื่องนี้</button></div></div>
+    }
+    @if (kind === 'cancel') {
+      <div class="stack"><p class="notice notice-warning">หากเครื่องใหม่รับข้อมูลไปแล้ว การกลับไปเครื่องเดิมอาจทำให้ข้อมูลล่าสุดหาย ต้องสำรองเครื่องใหม่และวางแผนกู้คืนก่อน</p><label class="backup-check"><input type="checkbox" name="destinationInactive" [(ngModel)]="destinationInactive" [disabled]="busy()">ฉันตรวจแล้วว่าเครื่องปลายทางยังไม่เปิดใช้งาน หรือหยุดเครื่องปลายทางเรียบร้อยแล้ว</label><div class="modal-actions"><button class="button" type="button" [disabled]="busy()" (click)="close()">กลับ</button><button class="button button-danger" type="button" [disabled]="busy() || !destinationInactive" (click)="cancelMigration()">ยืนยันยกเลิกการย้าย</button></div></div>
+    }
+  </gw-modal>
+}

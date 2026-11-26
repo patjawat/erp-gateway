@@ -9,6 +9,10 @@
 *.db-shm
 *.db-wal
 /data/
+/backend/data/
+**/.backup/
+*.bundle
+*recovery-kit*.json
 /bin/
 /coverage.out
 .serena/cache/

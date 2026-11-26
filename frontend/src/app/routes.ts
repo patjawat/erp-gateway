@@ -30,6 +30,11 @@ export const routes: Routes = [
       import("./pages/management/history.page").then((m) => m.HistoryPage),
   },
   {
+    path: "backups",
+    loadComponent: () =>
+      import("./pages/management/backups.page").then((m) => m.BackupsPage),
+  },
+  {
     path: "settings",
     loadComponent: () =>
       import("./pages/management/settings.page").then((m) => m.SettingsPage),

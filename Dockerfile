@@ -6,6 +6,14 @@ RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS backup-tools
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl bzip2 unzip \
+    && rm -rf /var/lib/apt/lists/*
+COPY deploy/gateway/install-backup-tools.sh /tmp/install-backup-tools.sh
+ARG TARGETARCH
+RUN sh /tmp/install-backup-tools.sh "$TARGETARCH" /out
+
 FROM --platform=$BUILDPLATFORM golang:1.26.11 AS build
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
@@ -19,6 +27,8 @@ RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" go build -trimpath -ldfl
 
 FROM gcr.io/distroless/static-debian12:nonroot AS gateway
 COPY --from=build /out/gateway /usr/local/bin/gateway
+COPY --from=backup-tools /out/restic /usr/local/bin/restic
+COPY --from=backup-tools /out/rclone /usr/local/bin/rclone
 COPY --from=build --chown=65532:65532 /out/data /data
 COPY --from=build --chown=65532:65532 /out/config /config
 USER 65532:65532

@@ -23,7 +23,7 @@ services:
     environment:
       LISTEN_ADDR: ":8080"
       GATEWAY_DATABASE_PATH: /data/gateway.db
-      GATEWAY_CONFIG_DIR: /config
+      GATEWAY_CONFIG_DIR: ${GATEWAY_CONFIG_DIR:-/config}
       SETUP: ${SETUP-true}
       GATEWAY_SETUP_PUBLIC_URL: ${GATEWAY_SETUP_PUBLIC_URL:-}
       GATEWAY_ALLOW_LAN_HTTP: ${GATEWAY_ALLOW_LAN_HTTP:-false}

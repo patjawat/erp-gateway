@@ -101,6 +101,12 @@ func main() {
 	address := env("LISTEN_ADDR", ":8080")
 	databasePath := env("GATEWAY_DATABASE_PATH", "data/gateway.db")
 	configDir := env("GATEWAY_CONFIG_DIR", "data/config")
+	if handled, err := runBackupCommand(context.Background(), os.Args[1:], configDir, os.Stdin, os.Stdout); handled {
+		if err != nil {
+			log.Fatal("backup: ", err)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "setup-password" {
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTSTP)
 		defer stop()
@@ -186,7 +192,7 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 {
-		log.Fatal("supported commands: healthcheck, setup-code, setup-password (interactive local Admin password reset), restore-config <archive> <new-directory> (passphrase on stdin)")
+		log.Fatal("supported commands: healthcheck, setup-code, setup-password, backup-export <bundle> <kit>, backup-import <bundle> <kit> [public-url], migration-cancel-offline, restore-config <archive> <new-directory> (passphrase on stdin)")
 	}
 	allowHTTP, err := boolean("GATEWAY_ALLOW_HTTP_UPSTREAM", false)
 	if err != nil || allowHTTP {
@@ -230,7 +236,14 @@ func main() {
 		}
 		workerCtx, cancelWorker := context.WithCancel(context.Background())
 		var sender gateway.PushSender
-		if path := os.Getenv("FCM_CREDENTIALS_FILE"); path != "" {
+		fcmPath := os.Getenv("FCM_CREDENTIALS_FILE")
+		if restored := filepath.Join(configDir, "integrations", "fcm.json"); fileExists(restored) {
+			fcmPath = restored
+		}
+		if c.ManagedFCM != nil && !*c.ManagedFCM {
+			fcmPath = ""
+		}
+		if path := fcmPath; path != "" {
 			sender, err = gateway.NewFCMSender(workerCtx, path)
 			if err != nil {
 				cancelWorker()
@@ -255,6 +268,7 @@ func main() {
 			cfg.ExportRecovery = func(ctx context.Context, passphrase string) ([]byte, error) {
 				return manager.ExportRecovery(ctx, passphrase)
 			}
+			cfg.BackupHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { manager.BackupHandler().ServeHTTP(w, r) })
 		} else {
 			cfg.AdminPassword = os.Getenv("GATEWAY_ADMIN_PASSWORD")
 			cfg.CookieSecure = legacySecure
@@ -310,7 +324,7 @@ func main() {
 			log.Print("legacy encryption key is invalid; local recovery is available and no replacement key was generated")
 		}
 	}
-	manager, err = bootstrap.New(bootstrap.Options{Directory: configDir, DatabasePath: databasePath, PublicSetupURL: os.Getenv("GATEWAY_SETUP_PUBLIC_URL"), WebPolicy: webPolicy, SetupEnabled: setupEnabled, TrustedProxyCIDRs: entries("GATEWAY_TRUSTED_PROXY_CIDRS"), LocalSetupCIDRs: entries("GATEWAY_SETUP_LOCAL_PROXY_CIDRS"), Build: build, ValidatePolicy: gateway.ValidateUpstreamPolicy, Assets: admin.LegacyHandler(), Legacy: legacy})
+	manager, err = bootstrap.New(bootstrap.Options{Directory: configDir, DatabasePath: databasePath, PublicSetupURL: os.Getenv("GATEWAY_SETUP_PUBLIC_URL"), WebPolicy: webPolicy, SetupEnabled: setupEnabled, TrustedProxyCIDRs: entries("GATEWAY_TRUSTED_PROXY_CIDRS"), LocalSetupCIDRs: entries("GATEWAY_SETUP_LOCAL_PROXY_CIDRS"), Build: build, ValidatePolicy: gateway.ValidateUpstreamPolicy, Assets: admin.LegacyHandler(), Legacy: legacy, IntegrationFiles: map[string]string{"fcm.json": os.Getenv("FCM_CREDENTIALS_FILE")}})
 	if err != nil {
 		if legacy != nil && legacy.Close != nil {
 			legacy.Close()
@@ -318,7 +332,12 @@ func main() {
 		log.Fatal(err)
 	}
 	defer manager.Close()
-	control, err := bootstrap.StartAdminControl(configDir, manager.ResetAdminPassword)
+	backupCtx, cancelBackups := context.WithCancel(context.Background())
+	defer cancelBackups()
+	if err = manager.StartBackups(backupCtx); err != nil {
+		log.Print("backup service unavailable; existing Gateway traffic retained: ", err)
+	}
+	control, err := bootstrap.StartAdminControl(configDir, manager.ResetAdminPassword, manager.BackupHandler())
 	if err != nil {
 		// A local recovery channel failure must not stop Mobile/API traffic.
 		log.Print("local administrator password control unavailable: ", err)

@@ -17,6 +17,12 @@ tmp
 *.log
 deploy/release/
 secrets/
+data/
+backend/data/
+**/.backup/
+**/backups/
+**/*.bundle
+**/*recovery-kit*.json
 **/node_modules/
 frontend/dist/
 frontend/.angular/

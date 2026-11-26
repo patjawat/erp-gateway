@@ -35,6 +35,7 @@ type Config struct {
 	ReadSettings          func() (RuntimeSettings, error)
 	ApplySettings         func(context.Context, RuntimeSettings) error
 	ExportRecovery        func(context.Context, string) ([]byte, error)
+	BackupHandler         http.Handler
 	Management            *ManagementState
 	PublicURL             string
 	WebPolicy             webtransport.Policy
@@ -210,6 +211,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin/api/settings", s.adminSettings)
 	mux.HandleFunc("PUT /admin/api/settings", s.adminApplySettings)
 	mux.HandleFunc("POST /admin/api/recovery/export", s.adminExportRecovery)
+	backupHandler := func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := s.adminAuth(w, r, r.Method != http.MethodGet && r.Method != http.MethodHead); !ok {
+			return
+		}
+		if s.config.BackupHandler == nil {
+			fail(w, 503, "BACKUP_UNAVAILABLE", "ระบบสำรองข้อมูลยังไม่พร้อม")
+			return
+		}
+		s.config.BackupHandler.ServeHTTP(w, r)
+	}
+	mux.HandleFunc("/admin/api/backups", backupHandler)
+	mux.HandleFunc("/admin/api/backups/", backupHandler)
 	mux.HandleFunc("GET /admin/api/certificates", s.adminCertificates)
 	mux.HandleFunc("POST /admin/api/certificates/csr", s.adminCertificateCSR)
 	mux.HandleFunc("POST /admin/api/certificates/import", s.adminCertificateImport)

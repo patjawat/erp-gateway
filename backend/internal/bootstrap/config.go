@@ -46,6 +46,7 @@ type RuntimeConfig struct {
 	ClientCertFile       string                 `json:"client_cert_file"`
 	ClientKeyFile        string                 `json:"client_key_file"`
 	HospitalCAFile       string                 `json:"hospital_ca_file,omitempty"`
+	ManagedFCM           *bool                  `json:"managed_fcm,omitempty"`
 }
 
 // ManagementPolicy resolves durable policy before environment defaults. Archives
@@ -199,6 +200,10 @@ func networkSize(n *net.IPNet) (int, int) {
 // ValidateIdentity verifies the imported key, purpose, dates and complete chain.
 // Supplied roots are an explicit trust decision by the authenticated operator.
 func ValidateIdentity(certPEM, keyPEM []byte) (tls.Certificate, error) {
+	return validateIdentityAt(certPEM, keyPEM, time.Now())
+}
+
+func validateIdentityAt(certPEM, keyPEM []byte, now time.Time) (tls.Certificate, error) {
 	if len(certPEM) > 256<<10 || len(keyPEM) > 32<<10 {
 		return tls.Certificate{}, errors.New("ไฟล์ใบรับรองหรือ private key ใหญ่เกินขอบเขต")
 	}
@@ -261,7 +266,7 @@ func ValidateIdentity(certPEM, keyPEM []byte) (tls.Certificate, error) {
 			intermediates.AddCert(cert)
 		}
 	}
-	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, CurrentTime: time.Now()}); err != nil {
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, CurrentTime: now}); err != nil {
 		return pair, errors.New("ตรวจ chain, clientAuth หรืออายุใบรับรองไม่ผ่าน กรุณานำเข้า chain ครบถึง root ที่เชื่อถือ")
 	}
 	pair.Leaf = leaf

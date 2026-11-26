@@ -11,6 +11,7 @@ import {
   LucideShieldCheck,
   LucideHistory,
   LucideSettings2,
+  LucideDatabaseBackup,
 } from "@lucide/angular";
 import { GatewayApi } from "./core/api.service";
 @Component({
@@ -30,6 +31,7 @@ import { GatewayApi } from "./core/api.service";
     LucideShieldCheck,
     LucideHistory,
     LucideSettings2,
+    LucideDatabaseBackup,
   ],
   templateUrl: "./app.html",
 })
