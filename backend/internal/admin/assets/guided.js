@@ -269,15 +269,22 @@
     button.disabled=true;try{const result=await api("hospitals/"+encodeURIComponent(hospital.id)+"/updater-token",{method:"POST",body:{}});byId("updater-token-value").value=result.token||"";byId("token-dialog").showModal();}catch(error){notice(error.message,"error");}finally{button.disabled=false;}
   }
   async function copyText(id){const text=byId(id).value;try{await navigator.clipboard.writeText(text);notice("คัดลอกแล้ว","success");}catch(_){byId(id).focus();byId(id).select();notice("เลือกข้อความแล้ว กดคัดลอกด้วยแป้นพิมพ์");}}
-  const signingCommandBase=byId("setup-ca-sign-command").value;
+  function validPublicCSR(value){return typeof value==="string"&&value.length<=64*1024&&/^-----BEGIN CERTIFICATE REQUEST-----\r?\n(?:[A-Za-z0-9+/=]+\r?\n)+-----END CERTIFICATE REQUEST-----\s*$/.test(value);}
+  function completeSigningCommand(csr,days){
+    if(!validPublicCSR(csr)||!Number.isInteger(days)||days<1||days>365)return "";
+    csr=csr.trim().replace(/\r\n/g,"\n");
+    return `(\n  set -eu\n  umask 077\n  GATEWAY_CERT_WORK=$(mktemp -d "$HOME/Downloads/gateway-client.XXXXXX")\n  cat > "$GATEWAY_CERT_WORK/gateway-client.csr.pem" <<'GATEWAY_CLIENT_CSR_PEM'\n${csr}\nGATEWAY_CLIENT_CSR_PEM\n  bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh" sign \\\n    "$HOME/.hospital-erp-pki/central-gateway-client-ca" \\\n    "$GATEWAY_CERT_WORK/gateway-client.csr.pem" \\\n    "$GATEWAY_CERT_WORK/gateway-client.crt.pem" \\\n    ${days}\n  cat "$GATEWAY_CERT_WORK/gateway-client.crt.pem" \\\n    "$HOME/.hospital-erp-pki/central-gateway-client-ca/gateway-client-ca.crt.pem" \\\n    > "$GATEWAY_CERT_WORK/gateway-client-chain.pem"\n  printf '\\nไฟล์สำหรับนำเข้า Gateway: %s\\n' "$GATEWAY_CERT_WORK/gateway-client-chain.pem"\n)`;
+  }
   function updateClientValidity(){
     const input=byId("setup-ca-validity-days"),raw=input.value.trim(),days=/^\d+$/.test(raw)?Number(raw):NaN;
     const valid=Number.isInteger(days)&&days>=1&&days<=365;
-    byId("setup-ca-sign-command").value=valid?signingCommandBase+" \\\n  "+days:"";
+    const csr=byId("setup-csr-pem").value,csrValid=validPublicCSR(csr);
+    byId("setup-ca-sign-command").value=valid?completeSigningCommand(csr,days):"";
+    byId("setup-ca-csr-help").hidden=csrValid;
     const error=byId("setup-ca-validity-error");error.textContent=valid?"":"ระบุจำนวนเต็ม 1–365 วัน";error.hidden=valid;input.setAttribute("aria-invalid",valid?"false":"true");
-    document.querySelector('[data-ca-command-copy="setup-ca-sign-command"]').disabled=!valid;
+    document.querySelector('[data-ca-command-copy="setup-ca-sign-command"]').disabled=!valid||!csrValid;
     document.querySelectorAll("[data-ca-validity-preset]").forEach(button=>button.setAttribute("aria-pressed",valid&&Number(button.dataset.caValidityPreset)===days?"true":"false"));
-    input.closest(".ca-signing-guide").querySelector('[role="status"]').textContent="";
+    input.closest(".ca-signing-guide").querySelector('.copy-status').textContent="";
   }
   byId("setup-ca-validity-days").addEventListener("input",updateClientValidity);
   byId("setup-ca-validity-days").addEventListener("keydown",event=>{if(event.key==="Enter")event.preventDefault();});
@@ -285,14 +292,14 @@
   updateClientValidity();
   document.querySelectorAll("[data-ca-command-copy]").forEach(button=>button.addEventListener("click",async()=>{
     if(button.disabled)return;
-    const command=byId(button.dataset.caCommandCopy),feedback=button.closest(".ca-signing-guide").querySelector('[role="status"]');
+    const command=byId(button.dataset.caCommandCopy),feedback=button.closest(".ca-signing-guide").querySelector('.copy-status');
     feedback.textContent="";
     try{await navigator.clipboard.writeText(command.value);feedback.textContent="คัดลอกคำสั่งแล้ว นำไปวางใน Terminal บน Mac";}
     catch(_){command.focus();command.select();feedback.textContent="เลือกคำสั่งแล้ว กด ⌘C บน Mac หรือ Ctrl+C เพื่อคัดลอก";}
   }));
   function downloadPublicCSR(id){
     const text=byId(id).value;
-    if(text.length>64*1024 || !/^-----BEGIN CERTIFICATE REQUEST-----\r?\n(?:[A-Za-z0-9+/=]+\r?\n)+-----END CERTIFICATE REQUEST-----\s*$/.test(text)){
+    if(!validPublicCSR(text)){
       notice("ยังไม่มี CSR สำหรับดาวน์โหลด กรุณาสร้างคำขอ CSR ก่อน","error");return;
     }
     const url=URL.createObjectURL(new Blob([text],{type:"application/pkcs10"}));
@@ -355,7 +362,7 @@
   byId("setup-code-form").addEventListener("submit",async event=>{event.preventDefault();if(!ui.setupEnabled)return;const button=byId("setup-unlock-submit");button.disabled=true;notice("");try{const data=await setupAPI("session",{code:byId("setup-code").value.trim()});if(!consumeSessionMetadata(data))return;ui.setupCSRF=data.csrf_token;byId("setup-code").value="";byId("setup-unlock").hidden=true;byId("setup-workspace").hidden=false;setupStep(0);}catch(error){notice(error.message,"error");}finally{button.disabled=false;}});
   byId("setup-csr-copy").addEventListener("click",()=>copyText("setup-csr-pem"));
   byId("setup-csr-download").addEventListener("click",()=>downloadPublicCSR("setup-csr-pem"));
-  byId("setup-csr-create").addEventListener("click",async()=>{const button=byId("setup-csr-create");button.disabled=true;setError("setup-error","");try{const result=await setupAPI("csr",{});byId("setup-csr-pem").value=result.csr_pem||"";byId("setup-csr-result").hidden=false;byId("setup-key").value="";ui.setupValid=false;byId("setup-activate").disabled=true;}catch(error){setError("setup-error",error);}finally{button.disabled=false;}});
+  byId("setup-csr-create").addEventListener("click",async()=>{const button=byId("setup-csr-create");button.disabled=true;setError("setup-error","");try{const result=await setupAPI("csr",{});byId("setup-csr-pem").value=result.csr_pem||"";byId("setup-csr-result").hidden=false;byId("setup-key").value="";updateClientValidity();ui.setupValid=false;byId("setup-activate").disabled=true;}catch(error){setError("setup-error",error);}finally{button.disabled=false;}});
   byId("setup-validate").addEventListener("click",async()=>{if(!gatewayURLValid(byId("setup-public-url").value.trim(),ui.setupLANHTTPEnabled,ui.setupLocalHTTPEnabled)){setError("setup-error",gatewayURLMessage(ui.setupLANHTTPEnabled,ui.setupLocalHTTPEnabled));return;}const button=byId("setup-validate");button.disabled=true;setError("setup-error","");ui.setupValid=false;byId("setup-activate").disabled=true;try{const data=await setupAPI("validate",setupPayload());byId("setup-checks").replaceChildren(...(data.checks||[]).map(check=>{const li=node("li"),copy=node("div");li.dataset.check=check.status;const names={admin:"บัญชีผู้ดูแล",https:"การเข้าใช้งาน Gateway",mtls:"ใบรับรอง mTLS",hospital_connectivity:"การเชื่อมต่อโรงพยาบาล"};copy.append(node("strong","",names[check.name]||check.name),node("p","",check.message||check.status));li.append(icon(check.status==="ready"?"check":"clock"),copy);return li;}));ui.setupValid=Boolean(data.valid);byId("setup-activate").disabled=!ui.setupValid;byId("setup-validation-note").textContent=data.valid?"ข้อมูลผ่านการตรวจ พร้อมบันทึกและเปิดใช้งาน":"ข้อมูลยังไม่พร้อม กรุณาตรวจรายการด้านบน";}catch(error){setError("setup-error",error);}finally{button.disabled=false;}});
   byId("setup-form").addEventListener("submit",async event=>{event.preventDefault();if(!ui.setupValid)return;const button=byId("setup-activate");button.disabled=true;setError("setup-error","");try{const result=await setupAPI("activate",setupPayload());byId("setup-form").reset();ui.setupCSRF="";ui.setupValid=false;location.assign(result.redirect==="/admin/"?result.redirect:"/admin/");}catch(error){setError("setup-error",error);button.disabled=false;}});
   async function startSetup(){

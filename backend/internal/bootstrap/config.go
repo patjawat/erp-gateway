@@ -2,6 +2,8 @@
 package bootstrap
 
 import (
+	"bytes"
+	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/pbkdf2"
@@ -200,13 +202,41 @@ func ValidateIdentity(certPEM, keyPEM []byte) (tls.Certificate, error) {
 	if len(certPEM) > 256<<10 || len(keyPEM) > 32<<10 {
 		return tls.Certificate{}, errors.New("ไฟล์ใบรับรองหรือ private key ใหญ่เกินขอบเขต")
 	}
+	if len(bytes.TrimSpace(certPEM)) == 0 {
+		return tls.Certificate{}, errors.New("กรุณาระบุใบรับรอง client และ chain (PEM) ที่ CA ลงนามแล้ว")
+	}
+	block, _ := pem.Decode(certPEM)
+	if block != nil && (block.Type == "CERTIFICATE REQUEST" || block.Type == "NEW CERTIFICATE REQUEST") {
+		return tls.Certificate{}, errors.New("ไฟล์นี้เป็น CSR ให้นำไปให้ CA ลงนาม แล้วนำใบรับรอง client และ chain ที่ได้รับกลับมาใส่ช่องนี้")
+	}
+	if block == nil || block.Type != "CERTIFICATE" {
+		return tls.Certificate{}, errors.New("ใบรับรอง client ต้องเป็น PEM CERTIFICATE ที่ถูกต้อง กรุณาเลือกไฟล์ใบรับรองที่ CA ลงนามแล้ว")
+	}
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return tls.Certificate{}, errors.New("ใบรับรอง client ต้องเป็น PEM CERTIFICATE ที่ถูกต้อง กรุณาเลือกไฟล์ใบรับรองที่ CA ลงนามแล้ว")
+	}
+	if leaf.IsCA {
+		return tls.Certificate{}, errors.New("ใบแรกเป็นใบ CA กรุณาวางใบรับรอง client ที่ CA ลงนามแล้วไว้ก่อน แล้วตามด้วย chain ของ CA")
+	}
+	if len(bytes.TrimSpace(keyPEM)) == 0 {
+		return tls.Certificate{}, errors.New("กรุณาระบุ private key ที่คู่กับใบรับรอง หรือใช้ CSR ที่ Gateway สร้างไว้")
+	}
+	private, err := identityPrivateKey(keyPEM)
+	if err != nil {
+		return tls.Certificate{}, errors.New("private key ต้องเป็น PEM ที่ถูกต้องและไม่เข้ารหัส กรุณาใช้ private key เดิมที่คู่กับใบรับรอง")
+	}
+	certPublic, certErr := x509.MarshalPKIXPublicKey(leaf.PublicKey)
+	keyPublic, keyErr := x509.MarshalPKIXPublicKey(private.Public())
+	if certErr != nil || keyErr != nil {
+		return tls.Certificate{}, errors.New("ชนิด public key ของใบรับรองหรือ private key ไม่รองรับ TLS client")
+	}
+	if !bytes.Equal(certPublic, keyPublic) {
+		return tls.Certificate{}, errors.New("ใบรับรอง client ไม่ตรงกับ private key ของ Gateway กรุณาใช้ใบที่เซ็นจาก CSR ของ Gateway เครื่องนี้ หรือเลือก private key เดิมที่คู่กับใบรับรอง")
+	}
 	pair, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil || len(pair.Certificate) == 0 {
-		return pair, errors.New("ใบรับรองและ private key ไม่ตรงกัน หรือรูปแบบ PEM ไม่ถูกต้อง")
-	}
-	leaf, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil || leaf.IsCA {
-		return pair, errors.New("ใบ Gateway ต้องเป็น leaf certificate สำหรับ clientAuth")
+		return tls.Certificate{}, errors.New("ใบรับรองหรือ private key ชนิดนี้ไม่รองรับ TLS client กรุณาตรวจไฟล์ PEM ที่นำเข้า")
 	}
 	clientAuth := false
 	for _, usage := range leaf.ExtKeyUsage {
@@ -236,6 +266,34 @@ func ValidateIdentity(certPEM, keyPEM []byte) (tls.Certificate, error) {
 	}
 	pair.Leaf = leaf
 	return pair, nil
+}
+
+// Parse the same PKCS#1, PKCS#8 and SEC1 formats accepted by tls.X509KeyPair.
+// Separating parsing from public-key comparison gives actionable diagnostics
+// without depending on the wording of errors from crypto/tls.
+func identityPrivateKey(body []byte) (crypto.Signer, error) {
+	for {
+		var block *pem.Block
+		block, body = pem.Decode(body)
+		if block == nil {
+			return nil, errors.New("private key PEM is missing or malformed")
+		}
+		if block.Type != "PRIVATE KEY" && !strings.HasSuffix(block.Type, " PRIVATE KEY") {
+			continue
+		}
+		if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+			return key, nil
+		}
+		if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+			if signer, ok := key.(crypto.Signer); ok {
+				return signer, nil
+			}
+		}
+		if key, err := x509.ParseECPrivateKey(block.Bytes); err == nil {
+			return key, nil
+		}
+		return nil, errors.New("private key format is unsupported or encrypted")
+	}
 }
 
 func validateHospitalCA(body []byte) error {

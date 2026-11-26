@@ -1,4 +1,4 @@
-import { Component, computed, signal } from "@angular/core";
+import { Component, Input, computed, signal } from "@angular/core";
 
 let validityControlSequence = 0;
 
@@ -73,6 +73,11 @@ let validityControlSequence = 0;
   ],
 })
 export class CertificateCaGuideComponent {
+  private readonly currentCSR = signal("");
+  @Input() set csrPem(value: string) {
+    this.currentCSR.set(value || "");
+    this.feedback.set("");
+  }
   readonly feedback = signal("");
   readonly validityDays = signal("90");
   readonly validityControlID = `gateway-client-validity-${++validityControlSequence}`;
@@ -91,17 +96,16 @@ export class CertificateCaGuideComponent {
     init: `mkdir -p -m 700 "$HOME/.hospital-erp-pki"
 bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh" init \\
   "$HOME/.hospital-erp-pki/central-gateway-client-ca"`,
-    sign: `bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh" sign \\
-  "$HOME/.hospital-erp-pki/central-gateway-client-ca" \\
-  "$HOME/Downloads/gateway-client.csr.pem" \\
-  "$HOME/Downloads/gateway-client.crt.pem"`,
-    chain: `cat "$HOME/Downloads/gateway-client.crt.pem" \\
-  "$HOME/.hospital-erp-pki/central-gateway-client-ca/gateway-client-ca.crt.pem" \\
-  > "$HOME/Downloads/gateway-client-chain.pem"`,
   };
+  readonly validCSR = computed(() => {
+    const value = this.currentCSR();
+    return value.length <= 64 * 1024 && /^-----BEGIN CERTIFICATE REQUEST-----\r?\n(?:[A-Za-z0-9+/=]+\r?\n)+-----END CERTIFICATE REQUEST-----\s*$/.test(value);
+  });
   readonly signingCommand = computed(() => {
     const days = this.validatedDays();
-    return days === null ? "" : `${this.commands.sign} \\\n  ${days}`;
+    if (days === null || !this.validCSR()) return "";
+    const csr = this.currentCSR().trim().replace(/\r\n/g, "\n");
+    return `(\n  set -eu\n  umask 077\n  GATEWAY_CERT_WORK=$(mktemp -d "$HOME/Downloads/gateway-client.XXXXXX")\n  cat > "$GATEWAY_CERT_WORK/gateway-client.csr.pem" <<'GATEWAY_CLIENT_CSR_PEM'\n${csr}\nGATEWAY_CLIENT_CSR_PEM\n  bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh" sign \\\n    "$HOME/.hospital-erp-pki/central-gateway-client-ca" \\\n    "$GATEWAY_CERT_WORK/gateway-client.csr.pem" \\\n    "$GATEWAY_CERT_WORK/gateway-client.crt.pem" \\\n    ${days}\n  cat "$GATEWAY_CERT_WORK/gateway-client.crt.pem" \\\n    "$HOME/.hospital-erp-pki/central-gateway-client-ca/gateway-client-ca.crt.pem" \\\n    > "$GATEWAY_CERT_WORK/gateway-client-chain.pem"\n  printf '\\nไฟล์สำหรับนำเข้า Gateway: %s\\n' "$GATEWAY_CERT_WORK/gateway-client-chain.pem"\n)`;
   });
 
   setValidityDays(value: string): void {

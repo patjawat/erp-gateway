@@ -7,14 +7,15 @@ const assets = resolve(process.cwd(), "../backend/internal/admin/assets");
 const html = readFileSync(resolve(assets, "index.html"), "utf8");
 const scripts = ["app.js", "guided.js"].map((name) => readFileSync(resolve(assets, name), "utf8")).join("\n");
 const windows: JSDOM[] = [];
+const csr = "-----BEGIN CERTIFICATE REQUEST-----\nVGVzdCBwdWJsaWMgQ1NS\n-----END CERTIFICATE REQUEST-----\n";
 
-async function setup() {
+async function setup(withCSR = true, csrValue = csr) {
   const dom = new JSDOM(html, { url: "http://10.10.8.127:8080/setup/", runScripts: "outside-only" });
   windows.push(dom);
   const { window } = dom;
   const fetch = vi.fn(async (path: string) => ({
     ok: true,
-    json: async () => ({ data: path === "/setup/api/status" ? { state: "setup", authenticated: true, csrf_token: "fixture-csrf", public_url: "http://10.10.8.127:8080", lan_http_enabled: true } : { valid: true, checks: [] } }),
+    json: async () => ({ data: path === "/setup/api/status" ? { state: "setup", authenticated: true, csrf_token: "fixture-csrf", public_url: "http://10.10.8.127:8080", lan_http_enabled: true } : path === "/setup/api/csr" ? { csr_pem: csrValue } : { valid: true, checks: [] } }),
   }));
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(window, "fetch", { value: fetch });
@@ -25,18 +26,46 @@ async function setup() {
   const input = window.document.getElementById("setup-ca-validity-days") as HTMLInputElement;
   const sign = window.document.getElementById("setup-ca-sign-command") as HTMLTextAreaElement;
   const copy = window.document.querySelector<HTMLButtonElement>('[data-ca-command-copy="setup-ca-sign-command"]')!;
+  if (withCSR) {
+    window.document.getElementById("setup-csr-create")!.click();
+    await vi.waitFor(() => expect((window.document.getElementById("setup-csr-pem") as HTMLTextAreaElement).value).toBe(csrValue));
+  }
   return { window, fetch, writeText, input, sign, copy };
 }
 
 afterEach(() => { for (const dom of windows.splice(0)) dom.window.close(); });
 
 describe("first-run client certificate validity guide", () => {
-  it("starts at 90 days with real shell continuation and unchanged init/chain commands", async () => {
+  it("disables signing without a CSR and leaves CA initialization available", async () => {
+    const { window, sign, copy } = await setup(false);
+    expect(sign.value).toBe("");
+    expect(copy.disabled).toBe(true);
+    expect(window.document.getElementById("setup-ca-csr-help")!.hidden).toBe(false);
+    expect(window.document.querySelector<HTMLButtonElement>('[data-ca-command-copy="setup-ca-init-command"]')!.disabled).toBe(false);
+  });
+
+  it.each([
+    "-----BEGIN PRIVATE KEY-----\nVGVzdA==\n-----END PRIVATE KEY-----\n",
+    "-----BEGIN CERTIFICATE REQUEST-----\n$(touch /tmp/not-run)\n-----END CERTIFICATE REQUEST-----\n",
+    "-----BEGIN CERTIFICATE REQUEST-----\nGATEWAY_CLIENT_CSR_PEM\n-----END CERTIFICATE REQUEST-----\n",
+    "-----BEGIN CERTIFICATE REQUEST-----\n" + "A".repeat(64 * 1024) + "\n-----END CERTIFICATE REQUEST-----\n",
+  ])("does not build a shell command for malformed or oversized CSR input", async (value) => {
+    const { sign, copy } = await setup(true, value);
+    expect(sign.value).toBe("");
+    expect(copy.disabled).toBe(true);
+  });
+
+  it("embeds the current CSR, signs and combines chain without an ambiguous download path", async () => {
     const { window, input, sign } = await setup();
     expect(input.value).toBe("90");
-    expect(sign.value.slice(-7).split("").map((character) => character.charCodeAt(0))).toEqual([32, 92, 10, 32, 32, 57, 48]);
+    expect(sign.value).toContain(csr.trim());
+    expect(sign.value).toContain("\n    90\n");
+    expect(sign.value).toContain('GATEWAY_CERT_WORK=$(mktemp -d "$HOME/Downloads/gateway-client.XXXXXX")');
+    expect(sign.value).toContain('<<\'GATEWAY_CLIENT_CSR_PEM\'');
+    expect(sign.value).not.toContain('"$HOME/Downloads/gateway-client.csr.pem"');
+    expect(sign.value).toContain('> "$GATEWAY_CERT_WORK/gateway-client-chain.pem"');
     const originalDocument = new window.DOMParser().parseFromString(html, "text/html");
-    for (const id of ["setup-ca-init-command", "setup-ca-chain-command"]) {
+    for (const id of ["setup-ca-init-command"]) {
       const original = originalDocument.getElementById(id) as HTMLTextAreaElement;
       expect((window.document.getElementById(id) as HTMLTextAreaElement).value).toBe(original.value);
     }
@@ -47,7 +76,7 @@ describe("first-run client certificate validity guide", () => {
     const preset = window.document.querySelector<HTMLButtonElement>(`[data-ca-validity-preset="${days}"]`)!;
     preset.click();
     expect(input.value).toBe(String(days));
-    expect(sign.value.endsWith("\n  " + days)).toBe(true);
+    expect(sign.value).toContain("\n    " + days + "\n");
     expect(preset.getAttribute("aria-pressed")).toBe("true");
     copy.click();
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(sign.value));
@@ -66,7 +95,7 @@ describe("first-run client certificate validity guide", () => {
     expect(copy.disabled).toBe(true);
     copy.click();
     expect(writeText).not.toHaveBeenCalled();
-    for (const id of ["setup-ca-init-command", "setup-ca-chain-command"]) {
+    for (const id of ["setup-ca-init-command"]) {
       expect(window.document.querySelector<HTMLButtonElement>(`[data-ca-command-copy="${id}"]`)!.disabled).toBe(false);
     }
   });
@@ -75,7 +104,7 @@ describe("first-run client certificate validity guide", () => {
     const { window, writeText, input, sign, copy } = await setup();
     input.value = "42";
     input.dispatchEvent(new window.Event("input", { bubbles: true }));
-    expect(sign.value.endsWith("\n  42")).toBe(true);
+    expect(sign.value).toContain("\n    42\n");
     writeText.mockRejectedValueOnce(new Error("clipboard unavailable"));
     copy.click();
     await vi.waitFor(() => expect(window.document.activeElement).toBe(sign));

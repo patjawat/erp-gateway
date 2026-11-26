@@ -8,11 +8,11 @@
     </p>
     <ol>
       <li>
-        <h3>ดาวน์โหลด CSR ของ Gateway</h3>
+        <h3>เตรียม CSR ของ Gateway เครื่องนี้</h3>
         <p>
-          กด “ดาวน์โหลด CSR” แล้วเก็บไฟล์ <code>gateway-client.csr.pem</code>
-          ใน Downloads บน Mac หากมีคำขอรอลงนามอยู่ ให้ใช้ CSR เดิม
-          ไม่ต้องสร้างใหม่
+          สร้างหรือเปิดคำขอ CSR ที่รอลงนาม คำสั่งด้านล่างใช้ CSR ที่แสดงในหน้านี้โดยตรง
+          ไม่ต้องเลือกไฟล์ใน Downloads จึงไม่สับสนกับไฟล์เก่า
+          ยังดาวน์โหลดหรือคัดลอก CSR แยกได้หากต้องส่งให้ผู้ลงนามคนอื่น
         </p>
       </li>
       <li>
@@ -39,7 +39,7 @@
         </p>
       </li>
       <li>
-        <h3>ลงนาม CSR ด้วย CA เดิม</h3>
+        <h3>ลงนามและรวม chain ด้วย CA เดิม</h3>
         <label class="field" [for]="validityControlID">
           อายุใบรับรอง client ของ Gateway (วัน)
           <input
@@ -78,10 +78,13 @@
           [hidden]="!validityError()"
           role="alert"
         >{{ validityError() }}</p>
+        <p class="help" [hidden]="validCSR()" role="status">
+          สร้างหรือเปิดคำขอ CSR ของ Gateway เครื่องนี้ก่อนคัดลอกคำสั่งลงนาม
+        </p>
         <textarea
           #signCommand
           readonly
-          rows="5"
+          rows="12"
           wrap="off"
           spellcheck="false"
           aria-label="คำสั่งลงนาม CSR บน Mac"
@@ -90,34 +93,24 @@
         <button
           class="button"
           type="button"
-          [disabled]="!!validityError()"
+          [disabled]="!signingCommand()"
           (click)="copySigningCommand(signCommand)"
         >
-          คัดลอกคำสั่งลงนาม
+          คัดลอกคำสั่งลงนามและรวม chain
         </button>
         <p class="help">
-          ใส่รหัสผ่าน CA ใน Terminal จะได้ใบรับรองตามจำนวนวันที่เลือก
+          วางคำสั่งทั้งหมดใน Terminal บน Mac แล้วใส่รหัสผ่าน CA
+          จะได้ใบรับรองตามจำนวนวันที่เลือก
           และค่า <code>HOSPITAL_GATEWAY_CLIENT_SPKI_SHA256</code>
-          สำหรับตั้งค่าฝั่ง API สคริปต์ไม่เขียนทับไฟล์เดิม:
-          เมื่อต่ออายุให้เปลี่ยนชื่อไฟล์ผลลัพธ์ในคำสั่งนี้และคำสั่งรวมใบให้ตรงกัน
+          สำหรับตั้งค่าฝั่ง API แต่ละครั้งจะสร้างโฟลเดอร์ใหม่ใน Downloads
+          และแสดงพาธไฟล์ chain ที่ต้องนำกลับเข้าเว็บ
         </p>
       </li>
       <li>
-        <h3>รวมใบรับรองแล้วนำกลับเข้า Gateway</h3>
-        <textarea
-          #chainCommand
-          readonly
-          rows="3"
-          wrap="off"
-          spellcheck="false"
-          aria-label="คำสั่งรวมใบรับรอง client และ CA"
-          [value]="commands.chain"
-        ></textarea>
-        <button class="button" type="button" (click)="copy(chainCommand)">
-          คัดลอกคำสั่งรวมใบรับรอง
-        </button>
+        <h3>นำ chain ที่เพิ่งสร้างกลับเข้า Gateway</h3>
         <p>
-          นำไฟล์ <code>gateway-client-chain.pem</code> เข้าในช่องใบรับรอง client
+          เลือกไฟล์ <code>gateway-client-chain.pem</code> ตามพาธที่ Terminal แสดง
+          เข้าในช่องใบรับรอง client
           และ chain เมื่อใช้ CSR ที่ Gateway สร้าง ไม่ต้องใส่ private key
           เพิ่มเติม เมื่อต่ออายุด้วย CA และกุญแจ Gateway เดิม
           โดยปกตินำเข้าใบ client ใหม่ที่ Gateway เท่านั้น

@@ -25,11 +25,11 @@
     </p>
     <ol>
       <li>
-        <h3>ดาวน์โหลด CSR ของ Gateway</h3>
+        <h3>เตรียม CSR ของ Gateway เครื่องนี้</h3>
         <p>
-          กด “ดาวน์โหลด CSR” แล้วเก็บไฟล์ <code>gateway-client.csr.pem</code>
-          ใน Downloads บน Mac หากมีคำขอรอลงนามอยู่ ให้ใช้ CSR เดิม
-          ไม่ต้องสร้างใหม่
+          กด “สร้าง CSR ที่ Gateway” คำสั่งด้านล่างจะใช้ CSR ที่แสดงในหน้านี้โดยตรง
+          ไม่ต้องเลือกไฟล์ใน Downloads จึงไม่สับสนกับไฟล์เก่า
+          ยังดาวน์โหลดหรือคัดลอก CSR แยกได้หากต้องส่งให้ผู้ลงนามคนอื่น
         </p>
       </li>
       <li>
@@ -56,7 +56,7 @@ bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh
         </p>
       </li>
       <li>
-        <h3>ลงนาม CSR ด้วย CA เดิม</h3>
+        <h3>ลงนามและรวม chain ด้วย CA เดิม</h3>
         <label for="setup-ca-validity-days">อายุใบรับรอง client ของ Gateway (วัน)</label>
         <input
           id="setup-ca-validity-days"
@@ -80,42 +80,30 @@ bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh
           ค่านี้ไม่ต่ออายุใบเดิมและไม่เปลี่ยนอายุ CA
         </p>
         <p id="setup-ca-validity-error" class="help" role="alert" hidden></p>
+        <p id="setup-ca-csr-help" class="help" role="status">สร้าง CSR ของ Gateway เครื่องนี้ก่อนคัดลอกคำสั่งลงนาม</p>
         <textarea
           id="setup-ca-sign-command"
           readonly
-          rows="5"
+          rows="12"
           wrap="off"
           spellcheck="false"
-          aria-label="คำสั่งลงนาม CSR บน Mac">bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh" sign \
-  "$HOME/.hospital-erp-pki/central-gateway-client-ca" \
-  "$HOME/Downloads/gateway-client.csr.pem" \
-  "$HOME/Downloads/gateway-client.crt.pem"</textarea>
-        <button class="button" type="button" data-ca-command-copy="setup-ca-sign-command">
-          คัดลอกคำสั่งลงนาม
+          aria-label="คำสั่งลงนาม CSR บน Mac"></textarea>
+        <button class="button" type="button" data-ca-command-copy="setup-ca-sign-command" disabled>
+          คัดลอกคำสั่งลงนามและรวม chain
         </button>
         <p class="help">
-          ใส่รหัสผ่าน CA ใน Terminal จะได้ใบรับรองตามจำนวนวันที่เลือก
+          วางคำสั่งทั้งหมดใน Terminal บน Mac แล้วใส่รหัสผ่าน CA
+          จะได้ใบรับรองตามจำนวนวันที่เลือก
           และค่า <code>HOSPITAL_GATEWAY_CLIENT_SPKI_SHA256</code>
-          สำหรับตั้งค่าฝั่ง API สคริปต์ไม่เขียนทับไฟล์เดิม:
-          เมื่อต่ออายุให้เปลี่ยนชื่อไฟล์ผลลัพธ์ในคำสั่งนี้และคำสั่งรวมใบให้ตรงกัน
+          สำหรับตั้งค่าฝั่ง API แต่ละครั้งจะสร้างโฟลเดอร์ใหม่ใน Downloads
+          และแสดงพาธไฟล์ chain ที่ต้องนำกลับเข้าเว็บ
         </p>
       </li>
       <li>
-        <h3>รวมใบรับรองแล้วนำกลับเข้า Gateway</h3>
-        <textarea
-          id="setup-ca-chain-command"
-          readonly
-          rows="3"
-          wrap="off"
-          spellcheck="false"
-          aria-label="คำสั่งรวมใบรับรอง client และ CA">cat "$HOME/Downloads/gateway-client.crt.pem" \
-  "$HOME/.hospital-erp-pki/central-gateway-client-ca/gateway-client-ca.crt.pem" \
-  > "$HOME/Downloads/gateway-client-chain.pem"</textarea>
-        <button class="button" type="button" data-ca-command-copy="setup-ca-chain-command">
-          คัดลอกคำสั่งรวมใบรับรอง
-        </button>
+        <h3>นำ chain ที่เพิ่งสร้างกลับเข้า Gateway</h3>
         <p>
-          นำไฟล์ <code>gateway-client-chain.pem</code> เข้าในช่องใบรับรอง client
+          เลือกไฟล์ <code>gateway-client-chain.pem</code> ตามพาธที่ Terminal แสดง
+          เข้าในช่องใบรับรอง client
           และ chain เมื่อใช้ CSR ที่ Gateway สร้าง ไม่ต้องใส่ private key
           เพิ่มเติม เมื่อต่ออายุด้วย CA และกุญแจ Gateway เดิม
           โดยปกตินำเข้าใบ client ใหม่ที่ Gateway เท่านั้น

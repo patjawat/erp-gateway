@@ -638,11 +638,21 @@ func (m *Manager) configure(w http.ResponseWriter, r *http.Request, activate boo
 	if !readJSON(w, r, &in, 1<<20) {
 		return
 	}
-	if in.ClientPrivateKeyPEM == "" {
+	if strings.TrimSpace(in.ClientPrivateKeyPEM) == "" {
 		body, err := readBounded(filepath.Join(m.options.Directory, "staged-client-key.pem"), 32<<10)
-		if err == nil {
-			in.ClientPrivateKeyPEM = string(body)
+		if errors.Is(err, os.ErrNotExist) {
+			jsonError(w, 400, "MISSING_GATEWAY_KEY", "ไม่พบ private key ที่ Gateway สร้างไว้ กรุณาตรวจว่าใช้ Gateway/volume เดิม หรือกดสร้าง CSR ที่ Gateway แล้วนำ CSR นั้นไปลงนาม")
+			return
 		}
+		if err != nil {
+			jsonError(w, 409, "KEY_RECOVERY_REQUIRED", "อ่าน private key ที่ Gateway เก็บไว้ไม่ได้ กรุณาตรวจสิทธิ์ไฟล์และกู้คืนจากข้อมูลสำรองเดิม")
+			return
+		}
+		if _, err := identityPrivateKey(body); err != nil {
+			jsonError(w, 409, "KEY_RECOVERY_REQUIRED", "private key ที่ Gateway เก็บไว้ไม่ถูกต้อง กรุณากู้คืนคีย์เดิมจากข้อมูลสำรอง")
+			return
+		}
+		in.ClientPrivateKeyPEM = string(body)
 	}
 	if err := validateInputWithPolicy(in, m.options.WebPolicy); err != nil {
 		jsonError(w, 400, "INVALID_SETUP", err.Error())

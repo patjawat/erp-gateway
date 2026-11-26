@@ -103,7 +103,7 @@
     @if (!state.pending_request && state.capabilities.import) {
     <p class="help">สร้าง CSR ก่อนนำเข้าใบรับรอง</p>
     }
-    <gw-certificate-ca-guide />
+    <gw-certificate-ca-guide [csrPem]="state.pending_request?.csr_pem || ''" />
   </section>
 </div>
 } @if (modal() === 'csr') {
@@ -167,7 +167,7 @@
       </button>
     </div>
     }
-    <gw-certificate-ca-guide />
+    <gw-certificate-ca-guide [csrPem]="data()?.pending_request?.csr_pem || ''" />
   </div>
 </gw-modal>
 } @if (modal() === 'import') {

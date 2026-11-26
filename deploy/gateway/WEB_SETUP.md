@@ -9,7 +9,7 @@
 3. ใช้ `SETUP=true` ตามค่าเริ่มต้นของ root Compose เปิด `http://localhost:8080/setup/` หรือ `http://IP-เซิร์ฟเวอร์:8080/setup/` จาก LAN/VPN ไม่ต้องกรอก URL/CIDR/proxy ใน `.env` ก่อน
 4. รัน `docker compose exec gateway /usr/local/bin/gateway setup-code` เพื่ออ่านรหัสอายุ 10 นาที ใช้ครั้งเดียว ไม่ใส่รหัสใน URL หรือ logs
 5. ยืนยันรหัสในเว็บ ระบบจะเสนอ URL ที่ตรวจจากการเข้าครั้งนี้ให้ยืนยัน ตั้งบัญชีผู้ดูแล ปลายทาง Hospital API และ private destination network ที่จำเป็น
-6. สร้าง Gateway key/CSR ผ่านเว็บ ดาวน์โหลดเฉพาะ CSR แล้วนำ chain ที่ลงนามด้วย `clientAuth` กลับมานำเข้า ต้องรวม issuer/root ที่ตรวจ chain ได้ Private key ไม่ออกจาก Gateway
+6. สร้าง Gateway key/CSR ผ่านเว็บ เปิดคู่มือลงนาม เลือกอายุใบ client แล้วคัดลอกคำสั่งไปใช้บน Mac คำสั่งใช้ CSR ที่แสดงในเว็บ สร้างโฟลเดอร์ผลลัพธ์ใหม่ และลงนามพร้อมรวม chain ให้ครบถึง CA นำไฟล์ chain จากพาธที่ Terminal แสดงกลับเข้าเว็บ โดยเว้นช่อง Private key เดิมว่าง Private key ไม่ออกจาก Gateway หรือดาวน์โหลดเฉพาะ CSR เพื่อส่งให้ผู้ดูแล CA ภายนอกลงนาม ดู [ขั้นตอนครบชุด](GATEWAY_CLIENT_CA.md)
 7. หรือเลือกนำเข้า identity เดิม โดยกรอก client certificate chain และ private key เดิมเฉพาะครั้งย้ายระบบ ไม่สร้าง CA root ใน Gateway
 8. ตรวจผลก่อนเปิดใช้งาน ใบผ่านการตรวจไม่ได้แปลว่าตรวจ end-to-end กับทุก Hospital แล้ว หลังเปิดใช้ให้ทดสอบหน่วยงานนำร่องก่อนอนุมัติ
 
