@@ -1,0 +1,39 @@
+name: Gateway CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Verify Docker and CI use the same Go patch
+        run: test "$(awk '/^go / {print $2}' backend/go.mod)" = "$(sed -n 's/^FROM .*golang:\([^ ]*\) AS build$/\1/p' Dockerfile)"
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Test frontend
+        working-directory: frontend
+        run: npm test
+      - name: Build Angular and embed it in the Go assets
+        run: bash deploy/gateway/build-admin-ui.sh
+      - name: Test backend
+        working-directory: backend
+        run: go test ./...
+      - name: Vet backend
+        working-directory: backend
+        run: go vet ./...
+      - name: Build Gateway binary
+        working-directory: backend
+        run: go build -trimpath -o ./bin/gateway ./cmd/gateway

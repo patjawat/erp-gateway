@@ -1,0 +1,162 @@
+<gw-modal
+  #attachmentsModal
+  title="เอกสารแนบหน่วยงาน"
+  [description]="hospital.name + ' · ' + hospital.code"
+  [busy]="busy()"
+  [dirty]="!!selectedFile"
+  (closed)="closed.emit()"
+>
+  @if (error()) {
+    <p class="notice notice-error" role="alert">{{ error() }}</p>
+  }
+  @if (message()) {
+    <p class="notice notice-success" role="status">{{ message() }}</p>
+  }
+  <form
+    class="attachment-upload"
+    (ngSubmit)="upload()"
+    [attr.aria-busy]="busy()"
+  >
+    <label class="field"
+      >ประเภทเอกสาร
+      <select
+        name="attachment-category"
+        [(ngModel)]="category"
+        [disabled]="busy()"
+      >
+        <option value="document">เอกสารทั่วไป</option>
+        <option value="slip">สลิป</option>
+        <option value="bill">บิล / ใบเสร็จ</option>
+        <option value="contract">สัญญา</option>
+      </select>
+    </label>
+    <label class="field"
+      >เลือกไฟล์แนบ
+      <input
+        #fileInput
+        type="file"
+        name="attachment-file"
+        accept=".pdf,.jpg,.jpeg,.png,.gif,.webp"
+        (change)="fileChanged($event)"
+        [disabled]="busy()"
+        aria-describedby="attachment-help"
+      />
+      <span id="attachment-help" class="help"
+        >แนบครั้งละ 1 ไฟล์ PDF หรือรูปภาพ JPEG, PNG, GIF, WebP ไม่เกิน 10
+        MB</span
+      >
+    </label>
+    @if (selectedFile) {
+      <p class="help attachment-selected">
+        {{ selectedFile.name }} · {{ size(selectedFile.size) }}
+      </p>
+    }
+    <button
+      type="submit"
+      class="button button-primary"
+      [disabled]="busy() || list.loading() || !selectedFile"
+    >
+      {{ busy() ? "กำลังดำเนินการ…" : "แนบเอกสาร" }}
+    </button>
+  </form>
+
+  <p class="muted attachment-total" aria-live="polite">
+    แสดง {{ count(list.items().length) }} จาก {{ count(list.total()) }} ไฟล์
+  </p>
+  @if (list.items().length) {
+    <ul class="attachment-list">
+      @for (attachment of list.items(); track attachment.id) {
+        <li>
+          <strong class="attachment-name">{{ attachment.filename }}</strong>
+          <p class="help attachment-meta">
+            {{ categories[attachment.category] || attachment.category }} ·
+            {{ size(attachment.size) }} · {{ thaiTime(attachment.created_at) }}
+          </p>
+          <div class="attachment-actions">
+            <a
+              class="button button-small"
+              [href]="downloadURL(attachment)"
+              [download]="attachment.filename"
+              [attr.aria-label]="'ดาวน์โหลด ' + attachment.filename"
+              >ดาวน์โหลด</a
+            >
+            <button
+              type="button"
+              class="button button-small button-danger"
+              [disabled]="busy() || list.loading()"
+              [attr.aria-label]="'ลบ ' + attachment.filename"
+              (click)="askDelete(attachment)"
+            >
+              ลบ
+            </button>
+          </div>
+          @if (deleting()?.id === attachment.id) {
+            <section class="attachment-delete" aria-label="ยืนยันลบเอกสาร">
+              <p>ลบ {{ attachment.filename }} ออกจากหน่วยงานนี้หรือไม่?</p>
+              <div class="attachment-actions">
+                <button
+                  type="button"
+                  class="button button-small"
+                  [disabled]="busy()"
+                  (click)="deleting.set(null)"
+                >
+                  เก็บไฟล์ไว้</button
+                ><button
+                  data-delete-confirm
+                  type="button"
+                  class="button button-small button-danger"
+                  [disabled]="busy()"
+                  (click)="remove()"
+                >
+                  {{ busy() ? "กำลังลบ…" : "ยืนยันลบไฟล์" }}
+                </button>
+              </div>
+            </section>
+          }
+        </li>
+      }
+    </ul>
+  } @else if (!list.loading() && !list.error()) {
+    <div class="empty-state">
+      <h3>ยังไม่มีเอกสารแนบ</h3>
+      <p>เลือกประเภทและไฟล์ด้านบนเพื่อแนบเอกสารให้หน่วยงานนี้</p>
+    </div>
+  }
+  @if (list.error()) {
+    <div class="notice notice-error" role="alert">
+      <p>{{ list.error() }}</p>
+      <button
+        type="button"
+        class="button"
+        [disabled]="list.loading()"
+        (click)="list.more()"
+      >
+        ลองโหลดอีกครั้ง
+      </button>
+    </div>
+  }
+  @if (list.loading()) {
+    <p class="loading" role="status">กำลังโหลดเอกสาร…</p>
+  }
+  @if (list.hasMore() && !list.error()) {
+    <div gwLoadMore (loadMore)="list.more()" aria-hidden="true"></div>
+    <button
+      type="button"
+      class="button"
+      [disabled]="list.loading()"
+      (click)="list.more()"
+    >
+      โหลดเอกสารเพิ่ม
+    </button>
+  }
+  <div class="modal-actions">
+    <button
+      type="button"
+      class="button"
+      [disabled]="busy()"
+      (click)="attachmentsModal.requestClose()"
+    >
+      ปิด
+    </button>
+  </div>
+</gw-modal>

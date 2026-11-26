@@ -1,0 +1,18 @@
+# Compatibility for an existing deployment. Back up the original DB + key first.
+# docker compose -f docker-compose.yml -f docker-compose.legacy-tls.yml up -d
+services:
+  gateway:
+    environment:
+      GATEWAY_CLIENT_TLS_CERT_FILE: /run/gateway-tls/client-chain.pem
+      GATEWAY_CLIENT_TLS_KEY_FILE: /run/gateway-tls/client-key.pem
+    volumes:
+      - type: bind
+        source: ${GATEWAY_CLIENT_TLS_CERT_HOST_PATH:?Set existing Gateway client certificate chain}
+        target: /run/gateway-tls/client-chain.pem
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${GATEWAY_CLIENT_TLS_KEY_HOST_PATH:?Set existing Gateway client private key}
+        target: /run/gateway-tls/client-key.pem
+        read_only: true
+        bind: {create_host_path: false}

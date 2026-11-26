@@ -1,0 +1,11 @@
+# Optional CA bundle for Hospital HTTPS server certificates. Gateway client only.
+services:
+  gateway:
+    environment:
+      GATEWAY_HOSPITAL_SERVER_CA_FILE: /run/gateway-tls/hospital-server-ca.pem
+    volumes:
+      - type: bind
+        source: ${GATEWAY_HOSPITAL_SERVER_CA_HOST_PATH:?Set existing Hospital server CA PEM file}
+        target: /run/gateway-tls/hospital-server-ca.pem
+        read_only: true
+        bind: {create_host_path: false}

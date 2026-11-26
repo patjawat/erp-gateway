@@ -1,0 +1,232 @@
+<div class="page-heading">
+  <div>
+    <h1 data-page-heading tabindex="-1">ใบรับรอง</h1>
+    <p class="page-subtitle">
+      ดูแลตัวตน Gateway และการเชื่อมต่อ mTLS กับหน่วยงาน
+    </p>
+  </div>
+  <button
+    class="button"
+    type="button"
+    [disabled]="loading() || busy()"
+    (click)="load()"
+  >
+    {{ loading() ? 'กำลังโหลด…' : 'โหลดข้อมูลใหม่' }}
+  </button>
+</div>
+@if (error()) {
+<p class="notice notice-error" role="alert">{{ error() }}</p>
+} @if (message()) {
+<p class="notice notice-success" role="status">{{ message() }}</p>
+} @if (loading() && !data()) {
+<p class="loading" role="status">กำลังโหลดใบรับรอง…</p>
+} @if (data(); as state) {
+<div class="certificate-grid">
+  <section class="panel stack" aria-labelledby="gateway-certificate-heading">
+    <div class="row">
+      <h2 id="gateway-certificate-heading">ใบรับรอง Gateway</h2>
+      @if (state.gateway; as certificate) {
+      <span
+        class="badge"
+        [class.badge-success]="certificate.status === 'valid'"
+        [class.badge-danger]="certificate.status === 'expired'"
+        [class.badge-warning]="certificate.status !== 'valid' && certificate.status !== 'expired'"
+        >{{ statusLabel(certificate.status) }}</span
+      >
+      }
+    </div>
+    @if (state.gateway; as certificate) {
+    <dl class="certificate-details">
+      <dt>ชื่อในใบรับรอง</dt>
+      <dd>{{ certificate.subject }}</dd>
+      <dt>เริ่มใช้งาน</dt>
+      <dd>{{ formatTime(certificate.not_before) }}</dd>
+      <dt>หมดอายุ</dt>
+      <dd>{{ formatTime(certificate.not_after) }}</dd>
+      <dt>เวลาคงเหลือ</dt>
+      <dd>
+        {{ certificate.days_remaining < 0 ? 'หมดอายุแล้ว' :
+        certificate.days_remaining + ' วัน' }}
+      </dd>
+      <dt>เลขที่ใบรับรอง</dt>
+      <dd>{{ certificate.serial }}</dd>
+      <dt>ลายนิ้วมือกุญแจ</dt>
+      <dd>{{ certificate.fingerprint }}</dd>
+    </dl>
+    } @else {
+    <div class="empty-state">
+      <h3>ยังไม่มีข้อมูลใบรับรอง Gateway</h3>
+      <p>ตรวจการตั้งค่าเริ่มต้นและตัวตนที่นำเข้ามาในระบบ</p>
+    </div>
+    }
+  </section>
+  <section class="panel stack" aria-labelledby="certificate-workflow-heading">
+    <h2 id="certificate-workflow-heading">คำขอและการนำเข้า</h2>
+    <p class="muted">
+      {{ state.issuer.message || 'สร้าง CSR ให้ผู้ดูแล CA ลงนาม
+      แล้วนำเข้าใบรับรองกลับมา' }}
+    </p>
+    @if (state.issuer.status === 'not_configured') {
+    <p class="notice">การลงนามและต่ออายุอัตโนมัติยังไม่พร้อมใช้งาน</p>
+    } @if (!state.capabilities.csr || !state.capabilities.import) {
+    <p class="notice">
+      การจัดการใบรับรองผ่านเว็บต้องใช้การตั้งค่าถาวรของ Gateway
+      ให้ย้ายการตั้งค่าเดิมผ่านหน้า Setup โดยเก็บกุญแจและข้อมูลเดิมไว้
+    </p>
+    } @if (state.pending_request; as request) {
+    <div class="stack">
+      <span class="badge badge-warning">มี CSR รอลงนาม</span>
+      <p class="muted">สร้างเมื่อ {{ formatTime(request.created_at) }}</p>
+      <p class="help">ลายนิ้วมือกุญแจ: {{ request.fingerprint }}</p>
+    </div>
+    } @else {
+    <p class="muted">ยังไม่มีคำขอใบรับรองที่รอลงนาม</p>
+    }
+    <div class="row">
+      <button
+        class="button button-primary"
+        type="button"
+        [disabled]="!state.capabilities.csr || busy()"
+        (click)="open('csr')"
+      >
+        {{ state.pending_request ? 'เปิดคำขอ CSR' : 'สร้างคำขอ CSR' }}
+      </button>
+      <button
+        class="button"
+        type="button"
+        [disabled]="!state.capabilities.import || !state.pending_request || busy()"
+        (click)="open('import')"
+      >
+        นำเข้าใบที่ลงนามแล้ว
+      </button>
+    </div>
+    @if (!state.pending_request && state.capabilities.import) {
+    <p class="help">สร้าง CSR ก่อนนำเข้าใบรับรอง</p>
+    }
+    <gw-certificate-ca-guide />
+  </section>
+</div>
+} @if (modal() === 'csr') {
+<gw-modal
+  title="คำขอใบรับรอง Gateway"
+  description="ส่งเฉพาะ CSR ให้ผู้ดูแล CA ลงนาม"
+  [busy]="busy()"
+  [dirty]="false"
+  (closed)="close()"
+>
+  <div class="stack">
+    @if (modalError()) {
+    <p class="notice notice-error" role="alert">{{ modalError() }}</p>
+    } @if (data()?.pending_request; as request) {
+    <label class="field"
+      >CSR สำหรับลงนาม<textarea
+        class="certificate-pem"
+        readonly
+        [value]="request.csr_pem"
+        spellcheck="false"
+        aria-label="CSR สำหรับลงนาม"
+      ></textarea>
+    </label>
+    <p class="help">ลายนิ้วมือกุญแจ: {{ request.fingerprint }}</p>
+    <div class="modal-actions">
+      <button
+        class="button"
+        type="button"
+        [disabled]="busy()"
+        (click)="copyCSR()"
+      >
+        {{ copied() ? 'คัดลอกแล้ว' : 'คัดลอก CSR' }}
+      </button>
+      <button
+        class="button button-primary"
+        type="button"
+        [disabled]="busy()"
+        (click)="downloadCSR()"
+      >
+        ดาวน์โหลด CSR
+      </button>
+    </div>
+    } @else {
+    <p>Gateway จะสร้างคำขอใบรับรอง และเก็บ Private Key ไว้ที่ Gateway</p>
+    <p class="help">CSR เดิมที่ยังรอลงนามจะถูกนำกลับมาใช้เมื่อกดซ้ำ</p>
+    <div class="modal-actions">
+      <button
+        class="button"
+        type="button"
+        [disabled]="busy()"
+        (click)="close()"
+      >
+        ยกเลิก</button
+      ><button
+        class="button button-primary"
+        type="button"
+        [disabled]="busy()"
+        (click)="createCSR()"
+      >
+        {{ busy() ? 'กำลังสร้างคำขอ…' : 'สร้างคำขอ CSR' }}
+      </button>
+    </div>
+    }
+    <gw-certificate-ca-guide />
+  </div>
+</gw-modal>
+} @if (modal() === 'import') {
+<gw-modal
+  #importDialog
+  title="นำเข้าใบรับรอง"
+  description="ตรวจใบรับรองและเปิดใช้กับตัวตน Gateway ปัจจุบัน"
+  [busy]="busy()"
+  [dirty]="certificatePem.length > 0"
+  (closed)="close()"
+>
+  <form class="stack" (ngSubmit)="importCertificate()">
+    @if (modalError()) {
+    <p class="notice notice-error" role="alert">{{ modalError() }}</p>
+    }
+    <label class="field"
+      >เลือกไฟล์ PEM<input
+        type="file"
+        accept=".pem,.crt,.cer"
+        [disabled]="busy()"
+        (change)="readFile($event)"
+      /><span class="help">ขนาดไม่เกิน 1 MiB</span></label
+    >
+    <label class="field"
+      >ใบรับรอง Gateway และ chain<textarea
+        class="certificate-pem"
+        name="certificatePem"
+        [(ngModel)]="certificatePem"
+        [disabled]="busy()"
+        (ngModelChange)="importConfirmed = false"
+        placeholder="-----BEGIN CERTIFICATE-----"
+        required
+        spellcheck="false"
+      ></textarea
+      ><span class="help"
+        >รวมใบ client และ chain ถึง root CA ที่ลงนามตรงกับ CSR นี้</span
+      ></label
+    >
+    <label class="row"
+      ><input
+        type="checkbox"
+        name="importConfirmed"
+        [(ngModel)]="importConfirmed"
+        [disabled]="busy()"
+        required
+      /><span>ยืนยันให้ตรวจและเปิดใช้ใบรับรองนี้กับ Gateway</span></label
+    >
+    <div class="modal-actions">
+      <button
+        class="button"
+        type="button"
+        [disabled]="busy()"
+        (click)="importDialog.requestClose()"
+      >
+        ยกเลิก</button
+      ><button class="button button-primary" type="submit" [disabled]="busy()">
+        {{ busy() ? 'กำลังตรวจและนำเข้า…' : 'ตรวจและเปิดใช้ใบรับรอง' }}
+      </button>
+    </div>
+  </form>
+</gw-modal>
+}

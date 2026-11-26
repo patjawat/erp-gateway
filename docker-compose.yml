@@ -1,0 +1,56 @@
+name: erp-mobile-gateway-workspace
+
+services:
+  gateway:
+    image: ${GATEWAY_IMAGE:-erp-platform/gateway:workspace}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: gateway
+    # Build the workspace on plain `docker compose up -d` instead of looking for
+    # an unpublished image. Production uses an explicit image and --no-build.
+    pull_policy: ${GATEWAY_PULL_POLICY:-build}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "${GATEWAY_BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-8080}:8080"
+    environment:
+      LISTEN_ADDR: ":8080"
+      GATEWAY_DATABASE_PATH: /data/gateway.db
+      GATEWAY_CONFIG_DIR: /config
+      GATEWAY_SETUP_PUBLIC_URL: ${GATEWAY_SETUP_PUBLIC_URL:-}
+      GATEWAY_SETUP_LOCAL_PROXY_CIDRS: ${GATEWAY_SETUP_LOCAL_PROXY_CIDRS:-172.16.0.0/12,192.168.0.0/16}
+      GATEWAY_ENCRYPTION_KEY: ${GATEWAY_ENCRYPTION_KEY:-}
+      GATEWAY_ADMIN_USERNAME: ${GATEWAY_ADMIN_USERNAME:-admin}
+      GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:-}
+      GATEWAY_ALLOW_HTTP_UPSTREAM: ${GATEWAY_ALLOW_HTTP_UPSTREAM:-false}
+      GATEWAY_APPROVED_UPSTREAMS: ${GATEWAY_APPROVED_UPSTREAMS:-}
+      GATEWAY_PRIVATE_UPSTREAM_CIDRS: ${GATEWAY_PRIVATE_UPSTREAM_CIDRS:-}
+      GATEWAY_COOKIE_SECURE: ${GATEWAY_COOKIE_SECURE:-true}
+      GATEWAY_TRUSTED_PROXY_CIDRS: ${GATEWAY_TRUSTED_PROXY_CIDRS:-}
+    volumes:
+      - gateway-workspace-data:/data
+      - gateway-workspace-config:/config
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/gateway", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    stop_grace_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  gateway-workspace-data:
+  gateway-workspace-config:

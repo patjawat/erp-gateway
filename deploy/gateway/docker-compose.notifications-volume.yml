@@ -1,0 +1,16 @@
+# Alternative to the host-file overlay for private 0600 credentials on Docker
+# Desktop. Provision the external volume with provision-fcm.py before use.
+services:
+  gateway:
+    environment:
+      FCM_CREDENTIALS_FILE: /run/secrets/firebase-service-account.json
+    volumes:
+      - type: volume
+        source: fcm-credentials
+        target: /run/secrets
+        read_only: true
+
+volumes:
+  fcm-credentials:
+    external: true
+    name: ${FCM_CREDENTIALS_VOLUME:?Provision a private FCM credential volume first}

@@ -1,0 +1,129 @@
+<div class="page-heading">
+  <div>
+    <h1 data-page-heading tabindex="-1">ประวัติการดูแล</h1>
+    <p class="page-subtitle">
+      ติดตามการเปลี่ยนแปลงทะเบียน การตั้งค่า และใบรับรอง
+    </p>
+  </div>
+  <button
+    class="button"
+    type="button"
+    [disabled]="list.loading()"
+    (click)="applyFilters()"
+  >
+    โหลดข้อมูลใหม่
+  </button>
+</div>
+<form class="toolbar" (ngSubmit)="applyFilters()" aria-label="ตัวกรองประวัติ">
+  <label class="field"
+    >ค้นหา<input
+      type="search"
+      name="query"
+      [(ngModel)]="query"
+      (ngModelChange)="searchChanged()"
+      placeholder="รหัสหน่วยงาน เหตุการณ์ หรือรายละเอียด"
+      maxlength="200"
+      autocomplete="off"
+  /></label>
+  <label class="field"
+    >เหตุการณ์<select
+      name="action"
+      [(ngModel)]="action"
+      (ngModelChange)="applyFilters()"
+    >
+      <option value="">ทั้งหมด</option>
+      @for (option of actions; track option[0]) {
+      <option [value]="option[0]">{{ option[1] }}</option>
+      }
+    </select></label
+  >
+  <label class="field"
+    >ตั้งแต่วันที่<input
+      type="date"
+      name="start"
+      [(ngModel)]="start"
+      (ngModelChange)="applyFilters()"
+      [max]="end || '9999-12-31'"
+    /><span class="help"
+      >{{ start ? formatDate(start) : 'ไม่จำกัดวันเริ่มต้น' }}</span
+    ></label
+  >
+  <label class="field"
+    >ถึงวันที่<input
+      type="date"
+      name="end"
+      [(ngModel)]="end"
+      (ngModelChange)="applyFilters()"
+      [min]="start || '0001-01-01'"
+    /><span class="help"
+      >{{ end ? formatDate(end) : 'ไม่จำกัดวันสิ้นสุด' }}</span
+    ></label
+  >
+  <button class="button" type="submit">ค้นหา</button>
+</form>
+@if (dateError()) {
+<p class="notice notice-error" role="alert">{{ dateError() }}</p>
+} @if (list.error()) {
+<div class="notice notice-error" role="alert">
+  <p>{{ list.error() }}</p>
+  <button
+    class="button button-small"
+    type="button"
+    [disabled]="list.loading()"
+    (click)="list.more()"
+  >
+    ลองโหลดอีกครั้ง
+  </button>
+</div>
+}
+<section class="panel stack" aria-labelledby="audit-list-heading">
+  <div class="row">
+    <h2 id="audit-list-heading">รายการเหตุการณ์</h2>
+    <span class="muted">{{ formatCount(list.total()) }} รายการ</span>
+  </div>
+  @if (!list.loading() && !list.error() && list.items().length === 0) {
+  <div class="empty-state">
+    <h3>ยังไม่มีเหตุการณ์ในช่วงที่เลือก</h3>
+    <p>ลองเปลี่ยนคำค้นหา เหตุการณ์ หรือช่วงเวลา</p>
+  </div>
+  } @if (list.items().length) {
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">วันและเวลา</th>
+          <th scope="col">หน่วยงาน</th>
+          <th scope="col">เหตุการณ์</th>
+          <th scope="col">รายละเอียด</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (event of list.items(); track event.id) {
+        <tr>
+          <td>{{ formatTime(event.created_at) }}</td>
+          <td>{{ event.hospital_code || 'ส่วนกลาง' }}</td>
+          <td>{{ actionLabels[event.action] || event.action }}</td>
+          <td>{{ reasons[event.reason] || event.reason || '—' }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  } @if (list.loading()) {
+  <p class="loading" role="status">กำลังโหลดประวัติ…</p>
+  } @if (list.hasMore()) {
+  <div gwLoadMore (loadMore)="list.more()" aria-hidden="true"></div>
+  <div>
+    <button
+      class="button"
+      type="button"
+      [disabled]="list.loading()"
+      (click)="list.more()"
+    >
+      {{ list.loading() ? 'กำลังโหลด…' : 'โหลดประวัติเพิ่ม' }}
+    </button>
+  </div>
+  } @if (!list.loading() && list.items().length && !list.hasMore()) {
+  <p class="help">แสดงครบตามตัวกรองแล้ว</p>
+  }
+</section>

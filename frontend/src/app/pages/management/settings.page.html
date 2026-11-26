@@ -1,0 +1,234 @@
+<div class="page-heading">
+  <div>
+    <h1 data-page-heading tabindex="-1">ตั้งค่า Gateway</h1>
+    <p class="page-subtitle">การเชื่อมต่อส่วนกลางและข้อมูลสำหรับกู้คืนระบบ</p>
+  </div>
+  <button
+    class="button"
+    type="button"
+    [disabled]="loading() || busy()"
+    (click)="load()"
+  >
+    {{ loading() ? 'กำลังโหลด…' : 'โหลดข้อมูลใหม่' }}
+  </button>
+</div>
+@if (error()) {
+<p class="notice notice-error" role="alert">{{ error() }}</p>
+} @if (message()) {
+<p class="notice notice-success" role="status">{{ message() }}</p>
+} @if (loading() && !data()) {
+<p class="loading" role="status">กำลังโหลดการตั้งค่า…</p>
+} @if (data(); as state) {
+<p class="notice">{{ state.message }}</p>
+<section class="panel stack" aria-labelledby="runtime-settings-heading">
+  <div class="page-actions">
+    <h2 id="runtime-settings-heading">การตั้งค่าการเชื่อมต่อ</h2>
+    <button
+      class="button button-primary"
+      type="button"
+      [disabled]="!state.editable || !state.settings || busy()"
+      (click)="open('settings')"
+    >
+      แก้ไขการตั้งค่า
+    </button>
+  </div>
+  @if (state.settings) {
+  <dl class="settings-values">
+    @for (field of fields; track field.key) {
+    <div>
+      <dt>{{ field.label }}</dt>
+      <dd>{{ displayValue(field.key) }}</dd>
+    </div>
+    }
+  </dl>
+  } @else {
+  <p class="muted">ยังไม่มีการตั้งค่าที่อ่านและแก้ไขผ่านเว็บได้</p>
+  }
+</section>
+<section class="panel stack" aria-labelledby="recovery-heading">
+  <h2 id="recovery-heading">ไฟล์สำหรับกู้คืนระบบ</h2>
+  <p class="muted">
+    ดาวน์โหลดการตั้งค่าและตัวตน Gateway แบบเข้ารหัสด้วยรหัสสำรองของคุณ
+  </p>
+  <p class="help">
+    ไฟล์นี้ไม่รวมฐานข้อมูลการใช้งาน ต้องสำรองฐานข้อมูลแยก
+    และเก็บรหัสสำรองคนละที่กับไฟล์
+  </p>
+  <div>
+    <button
+      class="button"
+      type="button"
+      [disabled]="!state.editable || busy()"
+      (click)="open('recovery')"
+    >
+      สร้างไฟล์กู้คืน
+    </button>
+  </div>
+</section>
+} @if (modal() === 'settings') {
+<gw-modal
+  #settingsDialog
+  title="แก้ไขการตั้งค่า"
+  description="ตรวจรายการเปลี่ยนแปลงก่อนใช้กับ Gateway"
+  [busy]="busy()"
+  [dirty]="isDirty()"
+  (closed)="close()"
+>
+  <form class="stack" (ngSubmit)="reviewing() ? apply() : review()">
+    @if (modalError()) {
+    <p class="notice notice-error" role="alert">{{ modalError() }}</p>
+    } @if (!reviewing()) {
+    <div class="form-grid">
+      <label class="field field-wide"
+        >ที่อยู่ HTTPS ของ Gateway<input
+          type="url"
+          name="publicUrl"
+          [(ngModel)]="draft.public_url"
+          [disabled]="busy()"
+          placeholder="https://gateway.example.org"
+          maxlength="2048"
+          required
+          autocomplete="url"
+        /><span class="help"
+          >ที่อยู่สำหรับเข้า Gateway ผ่าน HTTPS เดิม</span
+        ></label
+      >
+      <label class="field field-wide"
+        >ปลายทาง API ที่อนุญาต<textarea
+          name="upstreams"
+          [(ngModel)]="draft.approved_upstreams"
+          [disabled]="busy()"
+          rows="5"
+          placeholder="12345=https://api.example.org"
+          spellcheck="false"
+        ></textarea
+        ><span class="help"
+          >หนึ่งรายการต่อบรรทัด รูปแบบ รหัสหน่วยงาน 5 หลัก=https://ปลายทาง</span
+        ></label
+      >
+      <label class="field field-wide"
+        >เครือข่ายภายในของปลายทาง<textarea
+          name="privateCidrs"
+          [(ngModel)]="draft.private_upstream_cidrs"
+          [disabled]="busy()"
+          rows="3"
+          placeholder="10.10.0.0/16"
+          spellcheck="false"
+        ></textarea
+        ><span class="help"
+          >ระบุ CIDR ที่จำเป็น หนึ่งรายการต่อบรรทัด</span
+        ></label
+      >
+      <label class="field field-wide"
+        >เครือข่าย Reverse proxy ที่เชื่อถือ<textarea
+          name="proxyCidrs"
+          [(ngModel)]="draft.trusted_proxy_cidrs"
+          [disabled]="busy()"
+          rows="3"
+          placeholder="172.20.0.0/24"
+          spellcheck="false"
+        ></textarea
+        ><span class="help"
+          >ระบบจะเชื่อถือข้อมูล forwarded จากเครือข่ายที่กำหนดนี้</span
+        ></label
+      >
+    </div>
+    <div class="modal-actions">
+      <button
+        class="button"
+        type="button"
+        [disabled]="busy()"
+        (click)="settingsDialog.requestClose()"
+      >
+        ยกเลิก</button
+      ><button class="button button-primary" type="submit" [disabled]="busy()">
+        ตรวจรายการเปลี่ยนแปลง
+      </button>
+    </div>
+    } @else {
+    <p class="notice">หลังใช้การตั้งค่าใหม่ คุณต้องเข้าสู่ระบบอีกครั้ง</p>
+    <div class="settings-review">
+      @for (change of changes(); track change.key) {
+      <section class="settings-change">
+        <h3>{{ change.label }}</h3>
+        <div class="settings-comparison">
+          <div>
+            <span class="help">ค่าปัจจุบัน</span>
+            <p>{{ change.before }}</p>
+          </div>
+          <div>
+            <span class="help">ค่าที่จะใช้</span>
+            <p>{{ change.after }}</p>
+          </div>
+        </div>
+      </section>
+      }
+    </div>
+    <div class="modal-actions">
+      <button
+        class="button"
+        type="button"
+        [disabled]="busy()"
+        (click)="editAgain()"
+      >
+        กลับไปแก้ไข</button
+      ><button class="button button-primary" type="submit" [disabled]="busy()">
+        {{ busy() ? 'กำลังใช้การตั้งค่า…' : 'ยืนยันใช้การตั้งค่าใหม่' }}
+      </button>
+    </div>
+    }
+  </form>
+</gw-modal>
+} @if (modal() === 'recovery') {
+<gw-modal
+  #recoveryDialog
+  title="สร้างไฟล์กู้คืน"
+  description="ตั้งรหัสสำรองเพื่อเข้ารหัสการตั้งค่าและตัวตน Gateway"
+  [busy]="busy()"
+  [dirty]="isDirty()"
+  (closed)="close()"
+>
+  <form class="stack" (ngSubmit)="exportRecovery()">
+    @if (modalError()) {
+    <p class="notice notice-error" role="alert">{{ modalError() }}</p>
+    }
+    <label class="field"
+      >รหัสสำรอง<input
+        type="password"
+        name="passphrase"
+        [(ngModel)]="passphrase"
+        [disabled]="busy()"
+        autocomplete="new-password"
+        minlength="16"
+        maxlength="4096"
+        required
+      /><span class="help"
+        >อย่างน้อย 16 ตัวอักษร เก็บรหัสนี้แยกจากไฟล์กู้คืน</span
+      ></label
+    >
+    <label class="field"
+      >ยืนยันรหัสสำรอง<input
+        type="password"
+        name="confirmation"
+        [(ngModel)]="confirmation"
+        [disabled]="busy()"
+        autocomplete="new-password"
+        maxlength="4096"
+        required
+    /></label>
+    <p class="help">ไฟล์กู้คืนนี้ไม่รวมฐานข้อมูล</p>
+    <div class="modal-actions">
+      <button
+        class="button"
+        type="button"
+        [disabled]="busy()"
+        (click)="recoveryDialog.requestClose()"
+      >
+        ยกเลิก</button
+      ><button class="button button-primary" type="submit" [disabled]="busy()">
+        {{ busy() ? 'กำลังสร้างไฟล์…' : 'เข้ารหัสและดาวน์โหลด' }}
+      </button>
+    </div>
+  </form>
+</gw-modal>
+}

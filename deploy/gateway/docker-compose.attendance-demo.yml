@@ -1,0 +1,3 @@
+services:
+  gateway:
+    image: erp-platform/gateway:attendance-details-20261118

@@ -1,0 +1,567 @@
+<div class="page-heading">
+  <div>
+    <h1 data-page-heading tabindex="-1">หน่วยงานที่ดูแล</h1>
+    <p class="page-subtitle">
+      จัดการข้อมูล การเชื่อมต่อ และสิทธิ์ใช้งาน Mobile ของแต่ละหน่วยงาน
+    </p>
+  </div>
+  <button
+    #addButton
+    type="button"
+    class="button button-primary"
+    data-modal-return
+    (click)="openEditor('add')"
+  >
+    เพิ่มหน่วยงาน
+  </button>
+</div>
+
+@if (notice()) {
+<p
+  class="notice"
+  [class.notice-error]="noticeError()"
+  [class.notice-success]="!noticeError()"
+  role="status"
+>
+  {{ notice() }}
+</p>
+}
+
+<div class="toolbar hospital-toolbar">
+  <label class="field"
+    >ค้นหาหน่วยงาน
+    <input
+      type="search"
+      name="hospital-search"
+      [(ngModel)]="search"
+      (ngModelChange)="searchChanged()"
+      maxlength="65"
+      placeholder="ชื่อ รหัสสถานพยาบาล หรือจังหวัด"
+      autocomplete="off"
+    />
+  </label>
+  <label class="field"
+    >สถานะ
+    <select
+      name="hospital-status"
+      [(ngModel)]="status"
+      (ngModelChange)="reload()"
+    >
+      <option value="all">ทุกสถานะ</option>
+      <option value="pending">รออนุมัติ</option>
+      <option value="enabled">เปิดใช้งาน</option>
+      <option value="disabled">ยังไม่เปิด / ระงับ</option>
+      <option value="online">เชื่อมต่อได้</option>
+      <option value="offline">ติดต่อไม่ได้</option>
+    </select>
+  </label>
+  <button
+    type="button"
+    class="button"
+    [disabled]="list.loading()"
+    (click)="reload()"
+  >
+    รีเฟรช
+  </button>
+</div>
+
+<div class="panel">
+  <p class="muted hospital-count" aria-live="polite">
+    แสดง {{ count(list.items().length) }} จาก {{ count(list.total()) }} หน่วยงาน
+  </p>
+  @if (list.items().length) {
+  <div class="table-scroll">
+    <table class="data-table">
+      <caption class="sr-only">
+        หน่วยงาน สถิติการใช้แอป สถานะ และคำสั่งจัดการ
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">หน่วยงาน</th>
+          <th scope="col">ใช้แอปใน 30 วัน</th>
+          <th scope="col">สถานะ</th>
+          <th scope="col">การเชื่อมต่อ</th>
+          <th scope="col">จัดการ</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (hospital of list.items(); track hospital.id) {
+        <tr>
+          <th scope="row" class="hospital-identity">
+            <strong>{{ hospital.name }}</strong>
+            <small class="muted"
+              >{{ hospital.code }} · {{ hospital.province || 'ไม่ระบุจังหวัด'
+              }}</small
+            >
+            <span class="hospital-dates muted"
+              >เริ่ม {{ thaiDate(hospital.start_date) }}<br />หมดอายุ {{
+              thaiDate(hospital.expiry_date) }}</span
+            >
+            @if (expiryReminder(hospital.expiry_date)) {
+            <small class="hospital-expiry-note"
+              >{{ expiryReminder(hospital.expiry_date) }}</small
+            >
+            }
+          </th>
+          <td class="hospital-usage">
+            @if (usageReady(hospital.usage)) {
+            <strong>{{ count(hospital.usage?.adoption_30d) }}%</strong>
+            <small class="muted"
+              >{{ count(hospital.usage?.active_30d) }} / {{
+              count(hospital.usage?.personnel) }} คน</small
+            >
+            @if (hospital.usage?.status === 'partial') {
+            <small class="muted">ข้อมูลบางส่วน</small> } } @else {
+            <strong>—</strong
+            ><small class="muted">{{ usageLabel(hospital.usage) }}</small> } @if
+            (hospital.usage?.as_of) {
+            <small class="muted"
+              >ข้อมูล {{ thaiTime(hospital.usage!.as_of!) }}</small
+            >
+            }
+          </td>
+          <td>
+            <div class="hospital-status">
+              <span
+                class="badge"
+                [class.badge-warning]="hospital.approval_status !== 'approved'"
+                >{{ hospital.approval_status === 'approved' ? 'อนุมัติแล้ว' :
+                'รออนุมัติ' }}</span
+              >
+              @if (hospital.approval_status === 'approved') {
+              <span
+                class="badge"
+                [class.badge-success]="hospital.enabled"
+                [class.badge-danger]="!hospital.enabled"
+                >{{ hospital.enabled ? 'เปิดใช้งาน' : 'ระงับใช้งาน' }}</span
+              >
+              }
+            </div>
+          </td>
+          <td>
+            <span
+              class="badge"
+              [class.badge-success]="hospital.connection_status === 'online'"
+              [class.badge-warning]="hospital.connection_status === 'offline'"
+              >{{ hospital.connection_status === 'online' ? 'เชื่อมต่อได้' :
+              hospital.connection_status === 'offline' ? 'ติดต่อไม่ได้' :
+              'ยังไม่ได้ทดสอบ' }}</span
+            >
+            @if (hospital.checked_at) {
+            <small class="hospital-dates muted"
+              >{{ thaiTime(hospital.checked_at!) }}</small
+            >
+            }
+          </td>
+          <td>
+            <div class="hospital-row-actions">
+              <button
+                type="button"
+                class="button button-small"
+                [attr.aria-label]="'แก้ไข ' + hospital.name"
+                (click)="openEditor('edit', hospital)"
+              >
+                แก้ไข
+              </button>
+              <button
+                type="button"
+                class="button button-small button-gold"
+                [attr.aria-label]="'ต่ออายุ ' + hospital.name"
+                (click)="openEditor('renew', hospital)"
+              >
+                ต่ออายุ
+              </button>
+              <button
+                type="button"
+                class="button button-small"
+                [attr.aria-label]="'เอกสารแนบ ' + hospital.name"
+                (click)="attachmentHospital.set(hospital)"
+              >
+                เอกสารแนบ
+              </button>
+              <button
+                type="button"
+                class="button button-small"
+                [disabled]="!!busyId()"
+                [attr.aria-label]="'ทดสอบ ' + hospital.name"
+                (click)="action(hospital, 'test')"
+              >
+                {{ busyId() === hospital.id ? 'กำลังดำเนินการ…' : 'ทดสอบ' }}
+              </button>
+              @if (hospital.approval_status !== 'approved') {
+              <button
+                type="button"
+                class="button button-small button-primary"
+                [disabled]="!!busyId() || hospital.connection_status !== 'online'"
+                [attr.aria-label]="'อนุมัติและเปิดใช้ ' + hospital.name"
+                (click)="action(hospital, 'approve')"
+              >
+                อนุมัติและเปิดใช้
+              </button>
+              } @else if (hospital.enabled) {
+              <button
+                type="button"
+                class="button button-small button-danger"
+                [disabled]="!!busyId()"
+                [attr.aria-label]="'ระงับ ' + hospital.name"
+                (click)="openSuspend(hospital)"
+              >
+                ระงับ
+              </button>
+              } @else {
+              <button
+                type="button"
+                class="button button-small button-primary"
+                [disabled]="!!busyId() || hospital.connection_status !== 'online'"
+                [attr.aria-label]="'เปิดใช้งาน ' + hospital.name"
+                (click)="action(hospital, 'enable')"
+              >
+                เปิดใช้งาน
+              </button>
+              }
+            </div>
+            @if (hospital.connection_status !== 'online' && (!hospital.enabled
+            || hospital.approval_status !== 'approved')) {
+            <small class="hospital-dates muted"
+              >ทดสอบให้สำเร็จก่อนเปิดใช้งาน</small
+            >
+            }
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  } @else if (!list.loading() && !list.error()) {
+  <div class="empty-state">
+    <h2>
+      {{ search || status !== 'all' ? 'ไม่พบหน่วยงานที่ค้นหา' :
+      'ยังไม่มีหน่วยงาน' }}
+    </h2>
+    <p>
+      {{ search || status !== 'all' ? 'ลองเปลี่ยนคำค้นหาหรือเลือกสถานะอื่น' :
+      'เพิ่มหน่วยงาน แล้วทดสอบการเชื่อมต่อก่อนอนุมัติให้ใช้งาน' }}
+    </p>
+  </div>
+  } @if (list.error()) {
+  <div class="notice notice-error" role="alert">
+    <p>{{ list.error() }}</p>
+    <button
+      type="button"
+      class="button"
+      [disabled]="list.loading()"
+      (click)="list.more()"
+    >
+      ลองโหลดอีกครั้ง
+    </button>
+  </div>
+  } @if (list.loading()) {
+  <p class="loading" role="status">กำลังโหลดหน่วยงาน…</p>
+  } @if (list.hasMore() && !list.error()) {
+  <div gwLoadMore (loadMore)="list.more()" aria-hidden="true"></div>
+  <div class="modal-actions">
+    <button
+      type="button"
+      class="button"
+      [disabled]="list.loading()"
+      (click)="list.more()"
+    >
+      โหลดหน่วยงานเพิ่ม
+    </button>
+  </div>
+  }
+</div>
+<p class="help hospital-policy">
+  วันหมดอายุใช้สำหรับติดตามและพูดคุยกับลูกค้า
+  การระงับหรือเปิดใช้งานอยู่ภายใต้การตัดสินใจของคุณ
+</p>
+
+@if (editor()) {
+<gw-modal
+  #editorModal
+  [title]="editorTitle()"
+  description="ข้อมูลหน่วยงานและช่วงวันที่สำหรับการดูแลลูกค้า"
+  [busy]="saving()"
+  [dirty]="isDirty()"
+  (closed)="closeEditor()"
+>
+  <form
+    #hospitalForm
+    (ngSubmit)="saveHospital()"
+    novalidate
+    [attr.aria-busy]="saving()"
+  >
+    @if (formError()) {
+    <p class="notice notice-error" role="alert">{{ formError() }}</p>
+    } @if (editor() === 'renew') {
+    <div class="hospital-renew-context">
+      <strong>{{ editing?.name }}</strong>
+      <p class="muted">
+        รหัส {{ editing?.code }} · วันหมดอายุเดิม {{
+        thaiDate(editing?.expiry_date || '') }}
+      </p>
+    </div>
+    <label class="field"
+      >วันหมดอายุใหม่
+      <input
+        id="hospital-expiry"
+        type="date"
+        name="expiry_date"
+        [(ngModel)]="draft.expiry_date"
+        [disabled]="saving()"
+        [attr.aria-invalid]="errors().expiry_date ? 'true' : null"
+        aria-describedby="hospital-renew-help hospital-renew-error"
+        required
+      />
+      <span id="hospital-renew-help" class="help"
+        >{{ thaiDate(draft.expiry_date) }} ·
+        การเปลี่ยนวันนี้ไม่เปลี่ยนสถานะอนุมัติหรือเปิดใช้งาน</span
+      >
+      @if (errors().expiry_date) {
+      <span id="hospital-renew-error" class="field-error"
+        >{{ errors().expiry_date }}</span
+      >
+      }
+    </label>
+    } @else {
+    <div class="form-grid">
+      <label class="field field-wide"
+        >ชื่อหน่วยงาน
+        <input
+          id="hospital-name"
+          type="text"
+          name="name"
+          [(ngModel)]="draft.name"
+          [disabled]="saving()"
+          [attr.aria-invalid]="errors().name ? 'true' : null"
+          aria-describedby="hospital-name-error"
+          maxlength="120"
+          autocomplete="organization"
+          required
+        />
+        @if (errors().name) {
+        <span id="hospital-name-error" class="field-error"
+          >{{ errors().name }}</span
+        >
+        }
+      </label>
+      <label class="field"
+        >รหัสสถานพยาบาล
+        <input
+          id="hospital-code"
+          type="text"
+          name="code"
+          [(ngModel)]="draft.code"
+          [readOnly]="editor() !== 'add'"
+          [disabled]="saving()"
+          [attr.aria-invalid]="errors().code ? 'true' : null"
+          aria-describedby="hospital-code-help hospital-code-error"
+          inputmode="numeric"
+          maxlength="5"
+          pattern="[0-9]{5}"
+          required
+        />
+        <span id="hospital-code-help" class="help"
+          >{{ editor() === 'add' ? 'รหัส 5 หลักที่ไม่ซ้ำกับหน่วยงานเดิม' :
+          'รหัสประจำหน่วยงาน เปลี่ยนไม่ได้' }}</span
+        >
+        @if (errors().code) {
+        <span id="hospital-code-error" class="field-error"
+          >{{ errors().code }}</span
+        >
+        }
+      </label>
+      <label class="field"
+        >จังหวัด
+        <input
+          id="hospital-province"
+          type="text"
+          name="province"
+          [(ngModel)]="draft.province"
+          [disabled]="saving()"
+          [attr.aria-invalid]="errors().province ? 'true' : null"
+          aria-describedby="hospital-province-error"
+          maxlength="80"
+          autocomplete="address-level1"
+        />
+        @if (errors().province) {
+        <span id="hospital-province-error" class="field-error"
+          >{{ errors().province }}</span
+        >
+        }
+      </label>
+      <label class="field field-wide"
+        >ปลายทาง API
+        <input
+          id="hospital-url"
+          type="url"
+          name="api_url"
+          [(ngModel)]="draft.api_url"
+          [disabled]="saving()"
+          [attr.aria-invalid]="errors().api_url ? 'true' : null"
+          aria-describedby="hospital-url-help hospital-url-error"
+          placeholder="https://api.example.org"
+          maxlength="2048"
+          spellcheck="false"
+          required
+        />
+        <span id="hospital-url-help" class="help"
+          >ต้องตรงกับปลายทางที่อนุญาตในหน้าตั้งค่า Gateway ของหน่วยงานนี้</span
+        >
+        @if (errors().api_url) {
+        <span id="hospital-url-error" class="field-error"
+          >{{ errors().api_url }}</span
+        >
+        }
+      </label>
+      <label class="field field-wide"
+        >Gateway key {{ editor() === 'edit' ? 'ใหม่ (ถ้าต้องการเปลี่ยน)' : '' }}
+        <input
+          id="hospital-key"
+          type="password"
+          name="gateway_key"
+          [(ngModel)]="draft.gateway_key"
+          [disabled]="saving()"
+          [attr.aria-invalid]="errors().gateway_key ? 'true' : null"
+          aria-describedby="hospital-key-help hospital-key-error"
+          autocomplete="new-password"
+          minlength="32"
+          maxlength="512"
+          [required]="editor() === 'add'"
+        />
+        <span id="hospital-key-help" class="help"
+          >{{ editor() === 'add' ? 'ใช้ค่าเดียวกับ API ของหน่วยงาน อย่างน้อย 32
+          ตัวอักษร ระบบจะไม่แสดงค่านี้อีก' : 'เว้นว่างเพื่อใช้กุญแจเดิม
+          หากเปลี่ยนต้องตรงกับ API ของหน่วยงาน' }}</span
+        >
+        @if (errors().gateway_key) {
+        <span id="hospital-key-error" class="field-error"
+          >{{ errors().gateway_key }}</span
+        >
+        }
+      </label>
+      <label class="field"
+        >วันเริ่มใช้งาน
+        <input
+          id="hospital-start"
+          type="date"
+          name="start_date"
+          [(ngModel)]="draft.start_date"
+          [disabled]="saving()"
+          [attr.aria-invalid]="errors().start_date ? 'true' : null"
+          aria-describedby="hospital-start-help hospital-start-error"
+        />
+        <span id="hospital-start-help" class="help"
+          >{{ thaiDate(draft.start_date) }}</span
+        >
+        @if (errors().start_date) {
+        <span id="hospital-start-error" class="field-error"
+          >{{ errors().start_date }}</span
+        >
+        }
+      </label>
+      <label class="field"
+        >วันหมดอายุ
+        <input
+          id="hospital-expiry"
+          type="date"
+          name="expiry_date"
+          [(ngModel)]="draft.expiry_date"
+          [disabled]="saving()"
+          [attr.aria-invalid]="errors().expiry_date ? 'true' : null"
+          aria-describedby="hospital-expiry-help hospital-expiry-error"
+        />
+        <span id="hospital-expiry-help" class="help"
+          >{{ thaiDate(draft.expiry_date) }} · ใช้ติดตามโดยผู้ดูแล</span
+        >
+        @if (errors().expiry_date) {
+        <span id="hospital-expiry-error" class="field-error"
+          >{{ errors().expiry_date }}</span
+        >
+        }
+      </label>
+    </div>
+    } @if (configurationChanged()) {
+    <div class="hospital-confirm">
+      <p>
+        การแก้ชื่อ จังหวัด ปลายทาง หรือกุญแจ จะตั้งสถานะรออนุมัติ ปิดใช้งาน
+        และยกเลิก session ของหน่วยงานนี้ ต้องทดสอบและอนุมัติอีกครั้งหลังบันทึก
+      </p>
+      <label
+        ><input
+          type="checkbox"
+          name="confirm_configuration"
+          [(ngModel)]="confirmedConfiguration"
+          [disabled]="saving()"
+        /><span>ยืนยันการเปลี่ยนข้อมูลและตั้งสถานะรออนุมัติใหม่</span></label
+      >
+    </div>
+    }
+    <div class="modal-actions">
+      <button
+        type="button"
+        class="button"
+        [disabled]="saving()"
+        (click)="editorModal.requestClose()"
+      >
+        ยกเลิก
+      </button>
+      <button type="submit" class="button button-primary" [disabled]="saving()">
+        {{ saving() ? 'กำลังบันทึก…' : editor() === 'renew' ? 'บันทึกวันหมดอายุ'
+        : 'บันทึกหน่วยงาน' }}
+      </button>
+    </div>
+  </form>
+</gw-modal>
+} @if (suspending(); as hospital) {
+<gw-modal
+  #suspendModal
+  title="ระงับการใช้งาน Mobile"
+  [description]="hospital.name + ' · ' + hospital.code"
+  [busy]="suspendBusy()"
+  [dirty]="!!suspendReason"
+  (closed)="closeSuspend()"
+>
+  <form (ngSubmit)="suspend()" novalidate [attr.aria-busy]="suspendBusy()">
+    <p>
+      ผู้ใช้ของหน่วยงานนี้จะใช้งานผ่าน Gateway ไม่ได้
+      และต้องเข้าสู่ระบบใหม่เมื่อคุณเปิดใช้งานอีกครั้ง
+    </p>
+    <label class="field"
+      >เหตุผลการระงับ
+      <textarea
+        name="suspend_reason"
+        [(ngModel)]="suspendReason"
+        [disabled]="suspendBusy()"
+        rows="3"
+        maxlength="300"
+        required
+      ></textarea>
+    </label>
+    @if (suspendError()) {
+    <p class="notice notice-error" role="alert">{{ suspendError() }}</p>
+    }
+    <div class="modal-actions">
+      <button
+        type="button"
+        class="button"
+        [disabled]="suspendBusy()"
+        (click)="suspendModal.requestClose()"
+      >
+        ยกเลิก</button
+      ><button
+        type="submit"
+        class="button button-danger"
+        [disabled]="suspendBusy()"
+      >
+        {{ suspendBusy() ? 'กำลังระงับ…' : 'ยืนยันระงับการใช้งาน' }}
+      </button>
+    </div>
+  </form>
+</gw-modal>
+} @if (attachmentHospital(); as hospital) {
+<gw-hospital-attachments
+  [hospital]="hospital"
+  (closed)="attachmentHospital.set(null)"
+></gw-hospital-attachments>
+}

@@ -1,0 +1,118 @@
+<a class="skip-link" href="#main-content">ข้ามไปเนื้อหา</a>
+<header class="app-header">
+  <a class="brand" routerLink="/overview"
+    ><span class="brand-mark"
+      ><svg lucideWaypoints aria-hidden="true"></svg></span
+    ><span
+      ><strong>ERP Mobile Gateway</strong
+      ><small>พื้นที่ดูแลหน่วยงานของคุณ</small></span
+    ></a
+  >
+  <div class="header-actions">
+    <button
+      class="header-button"
+      type="button"
+      (click)="toggleMode()"
+      [attr.aria-pressed]="mode()==='dark'"
+      [attr.aria-label]="mode()==='light'?'สลับเป็นโหมดมืด':'สลับเป็นโหมดสว่าง'"
+    >
+      <svg lucideSunMoon aria-hidden="true"></svg
+      ><span>{{mode()==='light'?'โหมดสว่าง':'โหมดมืด'}}</span></button
+    >@if(api.authenticated()){<button
+      class="header-button"
+      type="button"
+      (click)="logout()"
+      [disabled]="busy()"
+    >
+      <svg lucideLogOut aria-hidden="true"></svg><span>ออกจากระบบ</span></button
+    >}
+  </div>
+</header>
+@if(api.checking()){
+<main id="main-content" class="login-stage">
+  <p class="loading" role="status">กำลังตรวจสอบการเข้าสู่ระบบ…</p>
+</main>
+} @else if(!api.authenticated()){
+<main id="main-content" class="login-stage">
+  <section class="panel login-panel" aria-labelledby="login-heading">
+    <span class="login-mark"
+      ><svg lucideShieldCheck aria-hidden="true"></svg
+    ></span>
+    <h1 id="login-heading">เข้าสู่ระบบจัดการ</h1>
+    <p class="page-subtitle">สำหรับผู้ดูแล Gateway ส่วนกลาง</p>
+    @if(api.sessionNotice()){
+    <p class="notice notice-success" role="status">{{api.sessionNotice()}}</p>
+    } @if(error()||api.sessionError()){
+    <p class="notice notice-error" role="alert">
+      {{error()||api.sessionError()}}
+    </p>
+    }
+    <form (ngSubmit)="login()" class="stack" [attr.aria-busy]="busy()">
+      <label class="field"
+        >ชื่อผู้ใช้<input
+          name="username"
+          autocomplete="username"
+          [(ngModel)]="username"
+          required
+          [disabled]="busy()" /></label
+      ><label class="field"
+        >รหัสผ่าน<input
+          type="password"
+          name="password"
+          autocomplete="current-password"
+          [(ngModel)]="password"
+          required
+          [disabled]="busy()" /></label
+      ><button class="button button-primary" type="submit" [disabled]="busy()">
+        {{busy()?'กำลังเข้าสู่ระบบ…':'เข้าสู่ระบบ'}}
+      </button>
+    </form>
+    <p class="help login-help">
+      ตั้งค่า Gateway ครั้งแรกผ่าน <a href="/setup/">หน้าตั้งค่าระบบ</a>
+    </p>
+  </section>
+</main>
+} @else {
+<nav class="main-nav" aria-label="เมนูหลัก Gateway">
+  <a
+    routerLink="/overview"
+    routerLinkActive="is-active"
+    ariaCurrentWhenActive="page"
+    ><svg lucideLayoutDashboard aria-hidden="true"></svg>ภาพรวม</a
+  >
+  <a
+    routerLink="/hospitals"
+    routerLinkActive="is-active"
+    ariaCurrentWhenActive="page"
+    ><svg lucideBuilding aria-hidden="true"></svg>หน่วยงาน</a
+  >
+  <a
+    routerLink="/usage"
+    routerLinkActive="is-active"
+    ariaCurrentWhenActive="page"
+    ><svg lucideChartNoAxesCombined aria-hidden="true"></svg>การใช้งาน</a
+  >
+  <a
+    routerLink="/certificates"
+    routerLinkActive="is-active"
+    ariaCurrentWhenActive="page"
+    ><svg lucideShieldCheck aria-hidden="true"></svg>ใบรับรอง</a
+  >
+  <a
+    routerLink="/history"
+    routerLinkActive="is-active"
+    ariaCurrentWhenActive="page"
+    ><svg lucideHistory aria-hidden="true"></svg>ประวัติ</a
+  >
+  <a
+    routerLink="/settings"
+    routerLinkActive="is-active"
+    ariaCurrentWhenActive="page"
+    ><svg lucideSettings2 aria-hidden="true"></svg>ตั้งค่า</a
+  >
+</nav>
+<main id="main-content" class="workspace"><router-outlet /></main>
+<footer class="app-footer">
+  ERP Mobile Gateway<span>จัดการโดยผู้ดูแลส่วนกลาง</span>
+</footer>
+}

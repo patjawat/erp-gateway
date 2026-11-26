@@ -1,0 +1,54 @@
+name: erp-mobile-gateway
+
+services:
+  gateway:
+    image: ${GATEWAY_IMAGE:-erp-platform/gateway:0.1.0}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "${GATEWAY_BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-8080}:8080"
+    environment:
+      LISTEN_ADDR: ":8080"
+      GATEWAY_DATABASE_PATH: /data/gateway.db
+      GATEWAY_CONFIG_DIR: ${GATEWAY_CONFIG_DIR:-/config}
+      GATEWAY_SETUP_PUBLIC_URL: ${GATEWAY_SETUP_PUBLIC_URL:-}
+      # Docker forwards loopback-published traffic from its bridge address.
+      # These peers may use plaintext setup only with localhost Host/Origin + setup code.
+      GATEWAY_SETUP_LOCAL_PROXY_CIDRS: ${GATEWAY_SETUP_LOCAL_PROXY_CIDRS:-172.16.0.0/12,192.168.0.0/16}
+      GATEWAY_ENCRYPTION_KEY: ${GATEWAY_ENCRYPTION_KEY:-}
+      GATEWAY_ADMIN_USERNAME: ${GATEWAY_ADMIN_USERNAME:-admin}
+      GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:-}
+      GATEWAY_ALLOW_HTTP_UPSTREAM: ${GATEWAY_ALLOW_HTTP_UPSTREAM:-false}
+      GATEWAY_APPROVED_UPSTREAMS: ${GATEWAY_APPROVED_UPSTREAMS:-}
+      GATEWAY_PRIVATE_UPSTREAM_CIDRS: ${GATEWAY_PRIVATE_UPSTREAM_CIDRS:-}
+      GATEWAY_COOKIE_SECURE: ${GATEWAY_COOKIE_SECURE:-true}
+      GATEWAY_TRUSTED_PROXY_CIDRS: ${GATEWAY_TRUSTED_PROXY_CIDRS:-}
+      GATEWAY_UPDATE_REPOSITORIES: ${GATEWAY_UPDATE_REPOSITORIES:-}
+      GATEWAY_UPDATE_SIGNING_PUBLIC_KEY: ${GATEWAY_UPDATE_SIGNING_PUBLIC_KEY:-}
+      GATEWAY_RELEASE_PUBLISH_TOKEN_SHA256: ${GATEWAY_RELEASE_PUBLISH_TOKEN_SHA256:-}
+    volumes:
+      - gateway-data:/data
+      - gateway-config:/config
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/gateway", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    stop_grace_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  gateway-data:
+  gateway-config:

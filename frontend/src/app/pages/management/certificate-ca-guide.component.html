@@ -1,0 +1,96 @@
+<details class="ca-signing-guide">
+  <summary>วิธีลงนาม CA และนำเข้าใบรับรอง</summary>
+  <div class="ca-guide-body">
+    <p>
+      คุณลงนามเองบน Mac ที่เก็บ CA ได้ คำสั่งด้านล่างใช้ Python 3 และ OpenSSL 3
+      ขึ้นไป โดยสมมติว่าโครงการอยู่ที่ <code>~/dev/erp-platform/gateway</code>
+      หากเก็บไว้ที่อื่น ให้แก้พาธสคริปต์ก่อนรัน
+    </p>
+    <ol>
+      <li>
+        <h3>ดาวน์โหลด CSR ของ Gateway</h3>
+        <p>
+          กด “ดาวน์โหลด CSR” แล้วเก็บไฟล์ <code>gateway-client.csr.pem</code>
+          ใน Downloads บน Mac หากมีคำขอรอลงนามอยู่ ให้ใช้ CSR เดิม
+          ไม่ต้องสร้างใหม่
+        </p>
+      </li>
+      <li>
+        <h3>สร้าง CA เฉพาะครั้งแรก</h3>
+        <p>
+          ถ้ามี CA เดิมที่ใช้กับระบบนี้ ให้ข้ามไปขั้นลงนาม
+          ใช้ตำแหน่ง CA เดิม และอย่าสร้าง CA ใหม่แทนเมื่อต่ออายุ
+        </p>
+        <textarea
+          #initCommand
+          readonly
+          rows="3"
+          wrap="off"
+          spellcheck="false"
+          aria-label="คำสั่งสร้าง CA ครั้งแรกบน Mac"
+          [value]="commands.init"
+        ></textarea>
+        <button class="button" type="button" (click)="copy(initCommand)">
+          คัดลอกคำสั่งสร้าง CA
+        </button>
+        <p class="help">
+          ตั้งรหัสผ่าน CA ที่ต้องการและยืนยันใน Terminal
+          เก็บรหัสไว้ในโปรแกรมจัดการรหัสผ่าน และสำรอง CA แบบเข้ารหัส
+        </p>
+      </li>
+      <li>
+        <h3>ลงนาม CSR ด้วย CA เดิม</h3>
+        <textarea
+          #signCommand
+          readonly
+          rows="4"
+          wrap="off"
+          spellcheck="false"
+          aria-label="คำสั่งลงนาม CSR บน Mac"
+          [value]="commands.sign"
+        ></textarea>
+        <button class="button" type="button" (click)="copy(signCommand)">
+          คัดลอกคำสั่งลงนาม
+        </button>
+        <p class="help">
+          ใส่รหัสผ่าน CA ใน Terminal จะได้ใบรับรองอายุเริ่มต้น 90 วัน
+          และค่า <code>HOSPITAL_GATEWAY_CLIENT_SPKI_SHA256</code>
+          สำหรับตั้งค่าฝั่ง API สคริปต์ไม่เขียนทับไฟล์เดิม:
+          เมื่อต่ออายุให้เปลี่ยนชื่อไฟล์ผลลัพธ์ในคำสั่งนี้และคำสั่งรวมใบให้ตรงกัน
+        </p>
+      </li>
+      <li>
+        <h3>รวมใบรับรองแล้วนำกลับเข้า Gateway</h3>
+        <textarea
+          #chainCommand
+          readonly
+          rows="3"
+          wrap="off"
+          spellcheck="false"
+          aria-label="คำสั่งรวมใบรับรอง client และ CA"
+          [value]="commands.chain"
+        ></textarea>
+        <button class="button" type="button" (click)="copy(chainCommand)">
+          คัดลอกคำสั่งรวมใบรับรอง
+        </button>
+        <p>
+          นำไฟล์ <code>gateway-client-chain.pem</code> เข้าในช่องใบรับรอง client
+          และ chain เมื่อใช้ CSR ที่ Gateway สร้าง ไม่ต้องใส่ private key
+          เพิ่มเติม
+        </p>
+      </li>
+    </ol>
+    <p class="notice">
+      Private key ของ Gateway อยู่ที่ Gateway ส่วน
+      <code>gateway-client-ca.key.pem</code> อยู่บน Mac ผู้ลงนาม
+      ไม่อัปโหลดคีย์ CA เข้าเว็บหรือส่งให้หน่วยงาน
+    </p>
+    <p class="help">
+      ฝั่ง API ต้องเชื่อถือใบ CA สาธารณะ
+      <code>gateway-client-ca.crt.pem</code> และตั้ง SPKI ของ Gateway ด้วย
+      จึงเชื่อมต่อได้ ส่วนช่อง “CA ของใบ server โรงพยาบาล” ในหน้า Setup
+      ใช้ตรวจตัวตนโรงพยาบาล เป็นคนละส่วนกับ CA ที่ใช้ลงนามนี้
+    </p>
+    <p class="help copy-status" role="status">{{ feedback() }}</p>
+  </div>
+</details>

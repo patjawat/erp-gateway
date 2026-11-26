@@ -1,0 +1,11 @@
+services:
+  gateway:
+    environment:
+      FCM_CREDENTIALS_FILE: /run/secrets/firebase-service-account.json
+    volumes:
+      - type: bind
+        source: ${FCM_CREDENTIALS_HOST_PATH:?Set a private Firebase service-account JSON path}
+        target: /run/secrets/firebase-service-account.json
+        read_only: true
+        bind:
+          create_host_path: false

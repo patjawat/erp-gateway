@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="th" data-theme="light">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Gateway ส่วนกลาง · ERP Mobile</title><link rel="stylesheet" href="/admin/style.css"><script src="/admin/app.js" defer></script><script src="/admin/guided.js" defer></script></head>
+<body>
+<a class="skip-link" href="#main">ข้ามไปเนื้อหา</a>
+<div class="app-shell"><aside id="main-rail" class="rail" aria-label="เมนูหลัก" hidden>
+<a class="rail-brand" href="/admin/" aria-label="ERP Mobile หน้าหลัก"><span data-icon="shield"></span><span>ERP</span></a>
+<nav><button class="rail-button" data-nav="overview" type="button"><span data-icon="home"></span><span>ภาพรวม</span></button><button class="rail-button" data-nav="hospitals" type="button"><span data-icon="building"></span><span>หน่วยงาน</span></button><button class="rail-button" data-nav="updates" type="button"><span data-icon="download"></span><span>อัปเดต API</span></button><button class="rail-button" data-nav="certificates" type="button"><span data-icon="shield"></span><span>ใบรับรอง</span></button><button class="rail-button" data-nav="settings" type="button"><span data-icon="settings"></span><span>ตั้งค่า</span></button></nav><div class="rail-bottom">ผู้ดูแล<br>ส่วนกลาง</div></aside>
+<div class="workspace"><header class="topbar"><a class="brand" href="/admin/"><strong>ERP Mobile</strong><span>Gateway ส่วนกลาง</span></a><div class="topbar-actions"><span id="system-status" class="system-status">พื้นที่ผู้ดูแล</span><button id="theme-toggle" class="button subtle" type="button" aria-label="เปลี่ยนเป็นโหมดมืด"><span data-icon="sun"></span><span id="theme-label">โหมดมืด</span></button><button id="logout" class="button subtle" type="button" hidden>ออกจากระบบ</button></div></header>
+<main id="main" class="page" tabindex="-1"><div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<section id="login-view" class="login-panel panel" aria-labelledby="login-heading" hidden><div class="login-symbol" data-icon="shield"></div><h1 id="login-heading">เข้าสู่ระบบผู้ดูแล</h1><p class="muted">ดูแลหน่วยงาน ใบรับรอง และการอัปเดตจากส่วนกลาง</p><form id="login-form"><label for="username">ชื่อผู้ใช้</label><input id="username" name="username" autocomplete="username" required maxlength="100"><label for="password">รหัสผ่าน</label><input id="password" name="password" type="password" autocomplete="current-password" required><button id="login-submit" class="button primary full" type="submit">เข้าสู่ระบบ</button></form></section>
+<section id="setup-view" hidden aria-labelledby="setup-title"><div class="page-heading"><div><h1 id="setup-title">ตั้งค่า Gateway ให้พร้อมใช้งาน</h1><p class="muted">ใช้ HTTPS เดิม และจัดเตรียมใบรับรองสำหรับเชื่อมต่อหน่วยงาน</p></div></div><div id="setup-reason" class="notice warning" hidden></div>
+<section id="setup-unlock" class="panel setup-unlock"><h2>ยืนยันผู้ตั้งค่า</h2><p class="muted">อ่านรหัสใช้ครั้งเดียวจากเครื่อง Gateway รหัสมีอายุจำกัดและไม่ใช่รหัสผ่านผู้ดูแล</p><code id="setup-code-command">docker compose exec gateway /usr/local/bin/gateway setup-code</code><form id="setup-code-form"><label for="setup-code">รหัสตั้งค่า</label><input id="setup-code" type="password" autocomplete="off" required maxlength="200"><button id="setup-unlock-submit" class="button primary" type="submit">เริ่มตั้งค่า</button></form></section>
+<section id="setup-workspace" class="panel" hidden><ol class="setup-stepper" aria-label="ขั้นตอนตั้งค่า"><li><button data-setup-step="0" type="button">1 บัญชีผู้ดูแล</button></li><li><button data-setup-step="1" type="button">2 ที่อยู่ระบบ</button></li><li><button data-setup-step="2" type="button">3 ใบรับรอง</button></li><li><button data-setup-step="3" type="button">4 ตรวจและเปิดใช้</button></li></ol><form id="setup-form" novalidate>
+<fieldset data-setup-panel="0"><legend>บัญชีผู้ดูแลส่วนกลาง</legend><p class="muted">รหัสผ่านจะถูกเก็บเป็นค่า hash ระบบจะไม่แสดงรหัสผ่านอีก</p><div class="form-grid"><div><label for="setup-username">ชื่อผู้ใช้</label><input id="setup-username" autocomplete="username" required maxlength="100" value="admin"></div><div><label for="setup-password">รหัสผ่านใหม่</label><input id="setup-password" type="password" autocomplete="new-password" required minlength="16" maxlength="512"><small>อย่างน้อย 16 ตัวอักษร</small></div><div id="setup-recovery-field" class="wide" hidden><label for="setup-encryption-key">Encryption key เดิม</label><input id="setup-encryption-key" type="password" autocomplete="off"><small>ใช้ key Base64 เดิมจากข้อมูลสำรอง ระบบจะไม่สร้าง key ใหม่ทับฐานข้อมูลเดิม</small></div></div></fieldset>
+<fieldset data-setup-panel="1" hidden><legend>ที่อยู่ Gateway และเครือข่าย</legend><p class="muted">ใช้ reverse proxy และใบ HTTPS ที่คุณดูแลอยู่แล้ว</p><label for="setup-public-url">ที่อยู่ HTTPS ของ Gateway</label><input id="setup-public-url" type="url" placeholder="https://gateway.example.org" required><label for="setup-proxies">เครือข่าย Reverse proxy ที่เชื่อถือ</label><textarea id="setup-proxies" rows="2" placeholder="127.0.0.1/32"></textarea><small>ใส่ CIDR ที่ใช้จริง คั่นด้วยบรรทัดใหม่หรือจุลภาค</small><label for="setup-upstreams">ปลายทาง API ที่อนุญาต</label><textarea id="setup-upstreams" rows="3" placeholder="10001=https://api.hospital.example.org"></textarea><small>รหัสสถานพยาบาล 5 หลัก ตามด้วย = และที่อยู่ HTTPS หนึ่งแห่งต่อบรรทัด</small><label for="setup-private-cidrs">เครือข่ายปลายทางภายในที่อนุญาต</label><textarea id="setup-private-cidrs" rows="2" placeholder="เช่น 10.20.0.0/24"></textarea><small>เว้นว่างหากปลายทางไม่มี IP ภายใน ระบุเฉพาะเครือข่ายที่ต้องเชื่อมต่อ</small></fieldset>
+<fieldset data-setup-panel="2" hidden><legend>ใบรับรอง Gateway</legend><p class="muted">ใช้ใบ client เดิมเพื่อรักษาการเชื่อมต่อ หรือสร้าง CSR ให้ CA ลงนาม Private key อยู่ที่ Gateway เท่านั้น</p><button id="setup-csr-create" class="button secondary" type="button">สร้าง CSR ที่ Gateway</button><div id="setup-csr-result" hidden><label for="setup-csr-pem">คำขอ CSR สำหรับลงนาม</label><textarea id="setup-csr-pem" readonly rows="6" spellcheck="false"></textarea><div class="form-actions"><button id="setup-csr-copy" class="button secondary" type="button">คัดลอก CSR</button><button id="setup-csr-download" class="button primary" type="button">ดาวน์โหลด CSR</button></div><small>นำ CSR ไปให้ผู้ดูแล CA ลงนาม แล้ววางใบที่ได้รับด้านล่าง ไม่ต้องนำ private key ออกจาก Gateway</small></div>
+<details class="ca-signing-guide">
+  <summary>วิธีลงนาม CA และนำเข้าใบรับรอง</summary>
+  <div class="ca-guide-body">
+    <p>
+      คุณลงนามเองบน Mac ที่เก็บ CA ได้ คำสั่งด้านล่างใช้ Python 3 และ OpenSSL 3
+      ขึ้นไป โดยสมมติว่าโครงการอยู่ที่ <code>~/dev/erp-platform/gateway</code>
+      หากเก็บไว้ที่อื่น ให้แก้พาธสคริปต์ก่อนรัน
+    </p>
+    <ol>
+      <li>
+        <h3>ดาวน์โหลด CSR ของ Gateway</h3>
+        <p>
+          กด “ดาวน์โหลด CSR” แล้วเก็บไฟล์ <code>gateway-client.csr.pem</code>
+          ใน Downloads บน Mac หากมีคำขอรอลงนามอยู่ ให้ใช้ CSR เดิม
+          ไม่ต้องสร้างใหม่
+        </p>
+      </li>
+      <li>
+        <h3>สร้าง CA เฉพาะครั้งแรก</h3>
+        <p>
+          ถ้ามี CA เดิมที่ใช้กับระบบนี้ ให้ข้ามไปขั้นลงนาม
+          ใช้ตำแหน่ง CA เดิม และอย่าสร้าง CA ใหม่แทนเมื่อต่ออายุ
+        </p>
+        <textarea
+          id="setup-ca-init-command"
+          readonly
+          rows="3"
+          wrap="off"
+          spellcheck="false"
+          aria-label="คำสั่งสร้าง CA ครั้งแรกบน Mac">mkdir -p -m 700 "$HOME/.hospital-erp-pki"
+bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh" init \
+  "$HOME/.hospital-erp-pki/central-gateway-client-ca"</textarea>
+        <button class="button" type="button" data-ca-command-copy="setup-ca-init-command">
+          คัดลอกคำสั่งสร้าง CA
+        </button>
+        <p class="help">
+          ตั้งรหัสผ่าน CA ที่ต้องการและยืนยันใน Terminal
+          เก็บรหัสไว้ในโปรแกรมจัดการรหัสผ่าน และสำรอง CA แบบเข้ารหัส
+        </p>
+      </li>
+      <li>
+        <h3>ลงนาม CSR ด้วย CA เดิม</h3>
+        <textarea
+          id="setup-ca-sign-command"
+          readonly
+          rows="4"
+          wrap="off"
+          spellcheck="false"
+          aria-label="คำสั่งลงนาม CSR บน Mac">bash "$HOME/dev/erp-platform/gateway/deploy/gateway/issue-gateway-client-cert.sh" sign \
+  "$HOME/.hospital-erp-pki/central-gateway-client-ca" \
+  "$HOME/Downloads/gateway-client.csr.pem" \
+  "$HOME/Downloads/gateway-client.crt.pem"</textarea>
+        <button class="button" type="button" data-ca-command-copy="setup-ca-sign-command">
+          คัดลอกคำสั่งลงนาม
+        </button>
+        <p class="help">
+          ใส่รหัสผ่าน CA ใน Terminal จะได้ใบรับรองอายุเริ่มต้น 90 วัน
+          และค่า <code>HOSPITAL_GATEWAY_CLIENT_SPKI_SHA256</code>
+          สำหรับตั้งค่าฝั่ง API สคริปต์ไม่เขียนทับไฟล์เดิม:
+          เมื่อต่ออายุให้เปลี่ยนชื่อไฟล์ผลลัพธ์ในคำสั่งนี้และคำสั่งรวมใบให้ตรงกัน
+        </p>
+      </li>
+      <li>
+        <h3>รวมใบรับรองแล้วนำกลับเข้า Gateway</h3>
+        <textarea
+          id="setup-ca-chain-command"
+          readonly
+          rows="3"
+          wrap="off"
+          spellcheck="false"
+          aria-label="คำสั่งรวมใบรับรอง client และ CA">cat "$HOME/Downloads/gateway-client.crt.pem" \
+  "$HOME/.hospital-erp-pki/central-gateway-client-ca/gateway-client-ca.crt.pem" \
+  > "$HOME/Downloads/gateway-client-chain.pem"</textarea>
+        <button class="button" type="button" data-ca-command-copy="setup-ca-chain-command">
+          คัดลอกคำสั่งรวมใบรับรอง
+        </button>
+        <p>
+          นำไฟล์ <code>gateway-client-chain.pem</code> เข้าในช่องใบรับรอง client
+          และ chain เมื่อใช้ CSR ที่ Gateway สร้าง ไม่ต้องใส่ private key
+          เพิ่มเติม
+        </p>
+      </li>
+    </ol>
+    <p class="notice">
+      Private key ของ Gateway อยู่ที่ Gateway ส่วน
+      <code>gateway-client-ca.key.pem</code> อยู่บน Mac ผู้ลงนาม
+      ไม่อัปโหลดคีย์ CA เข้าเว็บหรือส่งให้หน่วยงาน
+    </p>
+    <p class="help">
+      ฝั่ง API ต้องเชื่อถือใบ CA สาธารณะ
+      <code>gateway-client-ca.crt.pem</code> และตั้ง SPKI ของ Gateway ด้วย
+      จึงเชื่อมต่อได้ ส่วนช่อง “CA ของใบ server โรงพยาบาล” ในหน้า Setup
+      ใช้ตรวจตัวตนโรงพยาบาล เป็นคนละส่วนกับ CA ที่ใช้ลงนามนี้
+    </p>
+    <p class="help copy-status" role="status"></p>
+  </div>
+</details>
+
+<label for="setup-cert">ใบรับรอง client และ chain (PEM)</label><input type="file" data-pem-target="setup-cert" accept=".pem,.crt,.cer"><textarea id="setup-cert" rows="5" required spellcheck="false" autocomplete="off"></textarea><label for="setup-key">Private key เดิม (PEM)</label><input type="file" data-pem-target="setup-key" accept=".pem,.key"><textarea id="setup-key" rows="4" spellcheck="false" autocomplete="off"></textarea><small>เว้นว่างเมื่อใช้ CSR ที่ Gateway สร้างไว้ ไม่แจก key ของ Gateway ให้หน่วยงาน</small><label for="setup-ca">CA ของใบ server โรงพยาบาล (ถ้ามี)</label><input type="file" data-pem-target="setup-ca" accept=".pem,.crt,.cer"><textarea id="setup-ca" rows="4" spellcheck="false"></textarea><small>เว้นว่างเมื่อโรงพยาบาลใช้ใบ server จาก CA สาธารณะที่ระบบเชื่อถือ</small></fieldset>
+<fieldset data-setup-panel="3" hidden><legend>ตรวจสอบก่อนเปิดใช้งาน</legend><p class="muted">ตรวจข้อมูลและใบรับรองก่อนบันทึกถาวร การตรวจนี้ยังไม่ยืนยันการเชื่อมต่อกับโรงพยาบาล</p><ul id="setup-checks" class="check-list"></ul><p id="setup-validation-note" class="muted">กดตรวจความพร้อมก่อนเปิดใช้งาน</p><button id="setup-validate" class="button secondary" type="button">ตรวจความพร้อม</button></fieldset><div class="setup-actions"><button id="setup-back" class="button secondary" type="button">ย้อนกลับ</button><button id="setup-next" class="button primary" type="button">ถัดไป</button><button id="setup-activate" class="button primary" type="submit" hidden disabled>บันทึกและเปิดใช้งาน Gateway</button></div><p id="setup-error" class="dialog-error" role="alert" hidden></p></form></section></section>
+<div id="admin-view" hidden>
+<section id="view-overview" data-view="overview" hidden><div class="page-heading"><div><h1>ดูแลระบบทีละขั้น</h1><p class="muted">เริ่มจากงานที่ต้องดูแล แล้วจัดการหน่วยงานจากจุดเดียว</p></div><button class="button subtle" type="button" data-nav="hospitals">ดูหน่วยงานทั้งหมด <span data-icon="arrow"></span></button></div>
+<div class="guide-layout"><section class="guide panel"><div class="section-heading"><h2>เริ่มใช้งาน Gateway</h2><span class="muted">4 ขั้นตอน</span></div><div class="guide-content"><ol class="guide-steps"><li><button type="button" data-nav="settings"><span class="step-number">1</span><span><strong>ตั้งค่าระบบ</strong><small>บัญชีผู้ดูแลและที่อยู่ Gateway</small></span></button></li><li><button type="button" data-nav="certificates"><span class="step-number">2</span><span><strong>จัดการใบรับรอง</strong><small>ยืนยันการเชื่อมต่อระหว่างระบบ</small></span></button></li><li><button type="button" data-nav="hospitals"><span class="step-number">3</span><span><strong>เพิ่มหน่วยงาน</strong><small>ทดสอบและอนุมัติการเชื่อมต่อ</small></span></button></li><li><button type="button" data-nav="updates"><span class="step-number">4</span><span><strong>ดูแลและอัปเดต</strong><small>ส่งงานจาก Gateway ได้โดยตรง</small></span></button></li></ol><div class="guide-detail"><div class="detail-symbol" data-icon="settings"></div><h3>ดูแลผ่านเว็บ<br>ให้พร้อมในที่เดียว</h3><p>ตรวจการตั้งค่าระบบและใบรับรอง ก่อนเพิ่มหน่วยงานและเริ่มใช้งาน</p><button class="button primary" type="button" data-nav="settings">ตรวจการตั้งค่า <span data-icon="arrow"></span></button><small>ใช้ HTTPS เดิมของ Gateway</small></div></div></section><aside class="today"><div class="section-heading"><h2>สิ่งที่ควรดูแลวันนี้</h2><span id="attention-count" class="badge neutral">—</span></div><div id="attention-tasks" class="task-list"><p class="muted">กำลังตรวจสอบ…</p></div></aside></div>
+<section class="overview-section"><div class="section-heading"><div><h2>ภาพรวมการใช้งาน</h2><p id="usage-coverage" class="muted">ใช้ข้อมูลสรุปจากระบบจริง</p></div><button id="dashboard-refresh" class="button subtle" type="button">โหลดใหม่</button></div><div id="dashboard-metrics" class="metric-strip" aria-live="polite"></div><p id="usage-note" class="muted"></p></section>
+<div class="lower-layout"><section><div class="section-heading"><h2>หน่วยงานที่ดูแล</h2><button class="button subtle" type="button" data-nav="hospitals">เปิดรายการ <span data-icon="arrow"></span></button></div><div id="overview-hospitals" class="overview-hospitals"></div></section><section class="audit-section" aria-labelledby="audit-heading"><div class="section-heading"><h2 id="audit-heading">กิจกรรมล่าสุด</h2><span data-icon="clock"></span></div><ol id="audit-events" class="audit-list"></ol><p id="audit-empty" class="muted" hidden>ยังไม่มีประวัติการจัดการ</p><div class="load-row"><button id="audit-more" class="button subtle" type="button" hidden>โหลดกิจกรรมเพิ่ม</button><span id="audit-sentinel" class="page-sentinel" aria-hidden="true"></span></div></section></div></section>
+<section id="view-hospitals" data-view="hospitals" hidden>      <section class="page-heading" aria-labelledby="page-heading">
+        <div>
+          <h1 id="page-heading">จัดการโรงพยาบาล</h1>
+          <p class="muted">อนุมัติหน่วยงานและควบคุมการใช้งาน ERP Mobile จากส่วนกลาง</p>
+        </div>
+        <button id="show-add" class="button primary" type="button" aria-expanded="false" aria-controls="add-panel">เพิ่มโรงพยาบาล</button>
+      </section>
+
+      <section id="add-panel" class="panel form-panel" aria-labelledby="add-heading" hidden>
+        <div class="section-heading"><h2 id="add-heading">เพิ่มโรงพยาบาล</h2><button id="cancel-add" class="button subtle" type="button">ปิดแบบฟอร์ม</button></div>
+        <p id="form-description" class="muted">หน่วยงานใหม่จะอยู่ในสถานะรออนุมัติ ทดสอบการเชื่อมต่อก่อนเปิดให้เลือกบนแอป</p>
+        <form id="add-form" class="form-grid">
+          <div><label for="hospital-code">รหัสสถานพยาบาล</label><input id="hospital-code" name="code" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" placeholder="ตัวอย่าง 11447" required aria-describedby="code-help"><small id="code-help">ตัวเลข 5 หลัก เก็บเลขศูนย์ด้านหน้า</small></div>
+          <div><label for="hospital-name">ชื่อโรงพยาบาล</label><input id="hospital-name" name="name" maxlength="200" required></div>
+          <div><label for="hospital-province">จังหวัด</label><input id="hospital-province" name="province" maxlength="100" required></div>
+          <div><label for="hospital-url">ที่อยู่ API โรงพยาบาล</label><input id="hospital-url" name="api_url" type="url" placeholder="https://api.hospital.example" required aria-describedby="url-help"><small id="url-help">ปลายทาง Go API ที่ติดตั้งด้วย Docker Compose</small></div>
+          <div class="wide"><label for="hospital-key">กุญแจเชื่อมต่อ Gateway</label><input id="hospital-key" name="gateway_key" type="password" autocomplete="new-password" minlength="32" required aria-describedby="key-help"><small id="key-help">ใช้ค่าเดียวกับ HOSPITAL_GATEWAY_KEY ของหน่วยงาน อย่างน้อย 32 ตัวอักษร ระบบจะไม่แสดงค่านี้อีก</small></div>
+          <div><label for="hospital-start-date">วันเริ่มใช้งาน</label><input id="hospital-start-date" name="start_date" type="date" min="0001-01-01" max="9999-12-31" aria-describedby="dates-help"></div>
+          <div><label for="hospital-expiry-date">วันหมดอายุ</label><input id="hospital-expiry-date" name="expiry_date" type="date" min="0001-01-01" max="9999-12-31" aria-describedby="dates-help"></div>
+          <p id="dates-help" class="wide form-help">ไม่บังคับกรอก วันที่ใช้บันทึกข้อมูลประกอบและไม่เปิดหรือระงับการใช้งานอัตโนมัติ แนบเอกสารได้หลังบันทึกโรงพยาบาล</p>
+          <p id="edit-warning" class="wide muted" hidden>หากเปลี่ยนชื่อ จังหวัด หรือข้อมูลเชื่อมต่อ ระบบจะระงับหน่วยงานและยกเลิก session ปัจจุบัน ต้องทดสอบและอนุมัติใหม่ก่อนใช้งาน การเปลี่ยนเฉพาะวันที่ไม่กระทบการใช้งาน</p>
+          <div class="wide form-actions"><button id="add-submit" class="button primary" type="submit">บันทึกหน่วยงาน</button><button id="reset-add" class="button secondary" type="button">ยกเลิก</button></div>
+        </form>
+      </section>
+
+      <section id="attachments-panel" class="panel form-panel attachments-panel" aria-labelledby="attachments-heading" hidden>
+        <div class="section-heading"><h2 id="attachments-heading" tabindex="-1">เอกสารแนบ</h2><button id="attachments-close" class="button subtle" type="button">ปิดเอกสารแนบ</button></div>
+        <p id="attachments-hospital" class="confirm-hospital"></p>
+        <p class="muted">แนบเอกสาร สลิป บิล หรือสัญญาของโรงพยาบาลนี้ ผู้ดูแลส่วนกลางเท่านั้นที่เข้าถึงไฟล์ได้</p>
+        <form id="attachments-form" class="attachment-upload">
+          <div><label for="attachment-category">ประเภทเอกสาร</label><select id="attachment-category" name="category"><option value="document">เอกสารทั่วไป</option><option value="slip">สลิป</option><option value="bill">บิล / ใบเสร็จ</option><option value="contract">สัญญา</option></select></div>
+          <div class="attachment-picker"><label for="attachment-files">เลือกไฟล์แนบ</label><input id="attachment-files" name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,application/pdf,image/jpeg,image/png,image/gif,image/webp" multiple required aria-describedby="attachment-help"><small id="attachment-help">PDF, JPG, PNG, GIF หรือ WebP ขนาดไม่เกิน 10 MB ต่อไฟล์ เลือกได้หลายไฟล์</small></div>
+          <button id="attachment-submit" class="button primary" type="submit">อัปโหลดไฟล์</button>
+        </form>
+        <p id="attachments-message" class="notice" role="status" aria-live="polite" hidden></p>
+        <p id="attachments-error" class="dialog-error" role="alert" hidden></p>
+        <div class="attachments-summary"><h3>ไฟล์ที่แนบแล้ว</h3><button id="attachments-refresh" class="button subtle compact" type="button">โหลดรายการใหม่</button></div>
+        <p id="attachments-loading" class="muted" role="status" hidden>กำลังโหลดเอกสารแนบ…</p>
+        <p id="attachments-empty" class="muted" hidden>ยังไม่มีไฟล์แนบ เลือกประเภทและไฟล์เพื่อแนบเอกสารแรก</p>
+        <ul id="attachment-list" class="attachment-list"></ul><div class="load-row"><button id="attachments-more" class="button secondary" type="button" hidden>โหลดเอกสารเพิ่ม</button><span id="attachments-sentinel" class="page-sentinel" aria-hidden="true"></span></div>
+      </section>
+
+      <section class="panel" aria-label="ทะเบียนโรงพยาบาล">
+        <div class="toolbar">
+          <div class="search-field"><label for="search">ค้นหาโรงพยาบาล</label><input id="search" type="search" placeholder="ชื่อ รหัสสถานพยาบาล หรือจังหวัด" autocomplete="off"></div>
+          <div class="filter-field"><label for="filter">สถานะการใช้งาน</label><select id="filter"><option value="all">ทุกสถานะ</option><option value="pending">รออนุมัติ</option><option value="enabled">เปิดใช้งาน</option><option value="disabled">ระงับการใช้งาน</option></select></div>
+          <button id="refresh" class="button secondary" type="button">โหลดใหม่</button>
+        </div>
+        <div class="table-wrap" tabindex="0" aria-label="ตารางโรงพยาบาล เลื่อนแนวนอนได้">
+          <table>
+            <thead><tr><th scope="col">โรงพยาบาล</th><th scope="col">การใช้แอป 30 วัน</th><th scope="col">การอนุมัติ</th><th scope="col">สิทธิ์ใช้งานแอป</th><th scope="col">การเชื่อมต่อ</th><th scope="col" class="actions-heading">จัดการ</th></tr></thead>
+            <tbody id="hospital-rows"></tbody>
+          </table>
+        </div>
+        <div id="empty-state" class="empty-state" hidden><h2 id="empty-heading">ยังไม่มีโรงพยาบาล</h2><p id="empty-description" class="muted">เพิ่มโรงพยาบาล แล้วทดสอบการเชื่อมต่อเพื่อเริ่มอนุมัติหน่วยงาน</p></div>
+        <div class="table-footer"><span id="result-count" role="status" aria-live="polite">กำลังโหลดข้อมูล…</span><span class="muted">สถานะการเชื่อมต่อแสดงผลจากการทดสอบล่าสุด</span></div>
+      </section>
+
+<div class="load-row"><button id="hospitals-more" class="button secondary" type="button" hidden>โหลดหน่วยงานเพิ่ม</button><span id="hospitals-sentinel" class="page-sentinel" aria-hidden="true"></span></div></section>
+<section id="view-updates" data-view="updates" hidden><div class="page-heading"><div><h1>อัปเดต Hospital API</h1><p class="muted">ส่งงานจาก Gateway แล้วติดตามผลจาก Updater ของหน่วยงาน</p></div><button id="updates-refresh" class="button secondary" type="button">โหลดใหม่</button></div><div id="updates-status" class="notice" role="status">กำลังตรวจสอบการตั้งค่า…</div><section class="panel"><h2>วางแผนอัปเดต</h2><p class="muted">เริ่มจากหน่วยงานนำร่องก่อน ระบบจึงทยอยดำเนินการตามจำนวนที่กำหนด</p><form id="update-form"><div class="form-grid"><div><label for="update-release">รุ่น API</label><select id="update-release" size="4" required><option value="">กำลังโหลดรุ่น…</option></select><button id="releases-more" class="button subtle compact" type="button" hidden>โหลดรุ่นเพิ่ม</button></div><div><label for="update-parallel">จำนวนหน่วยงานพร้อมกัน</label><input id="update-parallel" type="number" min="1" max="10" value="2" required></div></div><fieldset class="scope-options"><legend>หน่วยงานเป้าหมาย</legend><label><input name="update-scope" type="radio" value="selected" checked> เลือกหน่วยงาน</label><label><input name="update-scope" type="radio" value="all"> ทุกหน่วยงานที่เข้ากันได้</label></fieldset><div id="update-targets"><label for="update-search">ค้นหาหน่วยงาน</label><input id="update-search" type="search" placeholder="ชื่อ รหัส หรือจังหวัด"><div id="update-hospitals" class="selection-list"></div><button id="update-hospitals-more" class="button subtle" type="button" hidden>โหลดหน่วยงานเพิ่ม</button></div><p id="update-selected-count" class="muted">ยังไม่ได้เลือกหน่วยงาน</p><button id="update-submit" class="button primary" type="submit" disabled>ตรวจแผนและส่งงานอัปเดต</button><p id="update-error" class="dialog-error" role="alert" hidden></p></form></section>
+<section class="list-section"><div class="section-heading"><h2>งานอัปเดตล่าสุด</h2><span class="muted">สถานะจากเครื่องหน่วยงาน</span></div><div id="update-jobs" class="job-list"></div><div class="load-row"><button id="jobs-more" class="button secondary" type="button" hidden>โหลดงานเพิ่ม</button><span id="jobs-sentinel" class="page-sentinel" aria-hidden="true"></span></div></section><section class="list-section"><h2>Updater ของหน่วยงาน</h2><p class="muted">สร้าง token แยกสำหรับ Updater ได้จากรายชื่อหน่วยงานในแผนอัปเดต</p><div id="updater-agents"></div><div class="load-row"><button id="agents-more" class="button secondary" type="button" hidden>โหลดเครื่องเพิ่ม</button><span id="agents-sentinel" class="page-sentinel" aria-hidden="true"></span></div></section>
+<details class="advanced panel"><summary>ลงทะเบียนรุ่นที่ Jenkins ลงนามแล้ว</summary><p class="muted">ใช้ manifest และ signature จากกระบวนการเผยแพร่ที่เชื่อถือ ระบบจะตรวจลายเซ็นและ repository ก่อนรับรุ่น</p><form id="release-form"><label for="release-manifest">Signed release manifest (JSON)</label><textarea id="release-manifest" rows="8" required spellcheck="false"></textarea><label for="release-signature">Signature</label><textarea id="release-signature" rows="3" required spellcheck="false"></textarea><button class="button secondary" type="submit">ตรวจลายเซ็นและลงทะเบียนรุ่น</button><p id="release-error" class="dialog-error" role="alert" hidden></p></form></details></section>
+<section id="view-certificates" data-view="certificates" hidden><div class="page-heading"><div><h1>ใบรับรองการเชื่อมต่อ</h1><p class="muted">ดูแล identity ของ Gateway และการเชื่อมต่อหน่วยงาน</p></div><button id="certificates-refresh" class="button secondary" type="button">โหลดใหม่</button></div><div id="certificate-inventory"></div><section class="panel"><h2>สร้างคำขอใบรับรอง Gateway</h2><p class="muted">ใช้ key เดิมที่ Gateway เพื่อรักษา public pin และส่งเฉพาะ CSR ให้ผู้ดูแล CA ลงนาม</p><button id="certificate-csr" class="button primary" type="button">สร้าง CSR</button><div id="csr-result" hidden><label for="csr-pem">คำขอ CSR</label><textarea id="csr-pem" rows="7" readonly spellcheck="false"></textarea><button id="csr-copy" class="button secondary" type="button">คัดลอก CSR</button></div><p id="certificate-error" class="dialog-error" role="alert" hidden></p></section><section class="panel"><h2>นำเข้าใบรับรองที่ลงนามแล้ว</h2><form id="certificate-import-form"><label for="certificate-chain">Certificate chain (PEM)</label><input type="file" data-pem-target="certificate-chain" accept=".pem,.crt,.cer"><textarea id="certificate-chain" rows="6" required spellcheck="false"></textarea><p class="muted">การนำเข้าใบนี้ใช้ key เดิมของ Gateway โดยไม่ส่งหรือแสดง private key การเปลี่ยน CA ที่เชื่อถือสำหรับ Hospital server ต้องวางแผนหมุนเวียน trust แยกต่างหาก เพื่อให้หน่วยงานเดิมเชื่อมต่อได้ต่อเนื่อง</p><button id="certificate-import" class="button primary" type="submit">ตรวจสอบและนำเข้าใบรับรอง</button><p id="certificate-import-error" class="dialog-error" role="alert" hidden></p></form></section></section>
+<section id="view-settings" data-view="settings" hidden>
+<div class="page-heading"><div><h1>ตั้งค่า Gateway</h1><p class="muted">การเชื่อมต่อและการกู้คืนสำหรับระบบส่วนกลาง</p></div><button id="settings-refresh" class="button secondary" type="button">โหลดใหม่</button></div>
+<section class="panel"><h2>สถานะระบบ</h2><dl id="settings-summary" class="summary-list"></dl><p class="muted">ใช้ HTTPS และ reverse proxy เดิมของ Gateway ข้อมูลลับและ private key จะไม่แสดงในหน้านี้</p></section>
+<section class="panel" aria-labelledby="settings-connection-heading"><h2 id="settings-connection-heading">การเชื่อมต่อระบบ</h2><p class="muted">กำหนดที่อยู่ Gateway และปลายทางที่อนุญาตผ่านเว็บ การบันทึกนี้ไม่ออกหรือเปลี่ยนใบ HTTPS ของโดเมน</p><p id="settings-edit-message" class="notice" role="status">กำลังตรวจการตั้งค่า…</p>
+<form id="settings-form" hidden>
+<label for="settings-public-url">ที่อยู่ HTTPS ของ Gateway</label><input id="settings-public-url" type="url" required placeholder="https://gateway.example.org">
+<label for="settings-proxies">เครือข่าย Reverse proxy ที่เชื่อถือ</label><textarea id="settings-proxies" rows="3" spellcheck="false" placeholder="127.0.0.1/32"></textarea><small>ระบุ CIDR ที่ใช้งานจริง หนึ่งรายการต่อบรรทัด ไม่เพิ่มเครือข่ายที่ไม่จำเป็น</small>
+<label for="settings-upstreams">ปลายทาง API ที่อนุญาต</label><textarea id="settings-upstreams" rows="5" spellcheck="false" placeholder="10001=https://api.hospital.example.org"></textarea><small>หนึ่งรายการต่อบรรทัด ในรูปแบบ รหัสสถานพยาบาล=https://ที่อยู่ API ต้องคงปลายทางของหน่วยงานที่เปิดใช้งานไว้ในรายการ จากนั้นทดสอบการเชื่อมต่อแยกตามหน่วยงาน</small>
+<label for="settings-private-cidrs">เครือข่ายภายในของปลายทางที่อนุญาต</label><textarea id="settings-private-cidrs" rows="3" spellcheck="false" placeholder="10.20.0.0/24"></textarea><small>ระบุ CIDR หนึ่งรายการต่อบรรทัด เว้นว่างเมื่อ API ปลายทางไม่มี IP ภายใน</small>
+<div class="form-actions"><button id="settings-reset" class="button secondary" type="button">คืนค่าที่บันทึก</button><button id="settings-review-submit" class="button primary" type="submit">ตรวจรายการเปลี่ยนแปลง</button></div>
+<section id="settings-review" class="inline-review" aria-labelledby="settings-review-heading" hidden><h3 id="settings-review-heading">ตรวจรายการก่อนใช้การตั้งค่าใหม่</h3><div id="settings-diff" class="settings-diff"></div><p class="muted">หลังบันทึก ระบบจะใช้การตั้งค่าใหม่และให้เข้าสู่ระบบอีกครั้ง ตรวจที่อยู่และเครือข่ายให้ถูกต้องก่อนยืนยัน</p><button id="settings-apply" class="button primary" type="button">ยืนยันบันทึกและใช้การตั้งค่า</button></section>
+<p id="settings-error" class="dialog-error" role="alert" hidden></p></form></section>
+<section class="panel" aria-labelledby="recovery-heading"><h2 id="recovery-heading">ดาวน์โหลดชุดกู้คืนที่เข้ารหัส</h2><p class="muted">ชุดกู้คืนประกอบด้วยการตั้งค่า encryption key และ private identity ของ Gateway โดยไม่รวมฐานข้อมูลหรือ private key ของ root CA ให้สำรองฐานข้อมูลแบบ consistent แยกต่างหากและเก็บคู่กัน</p><p id="recovery-unavailable" class="notice" hidden>ต้องย้ายเข้าการตั้งค่าถาวรตามคู่มือ WEB_SETUP ก่อนสร้างชุดกู้คืนผ่านเว็บ</p>
+<form id="recovery-export-form" hidden><div class="form-grid"><div><label for="recovery-passphrase">รหัสผ่านสำหรับเข้ารหัสชุดกู้คืน</label><input id="recovery-passphrase" type="password" required minlength="16" maxlength="512" autocomplete="new-password" aria-describedby="recovery-passphrase-help"></div><div><label for="recovery-confirm">ยืนยันรหัสผ่าน</label><input id="recovery-confirm" type="password" required minlength="16" maxlength="512" autocomplete="new-password"></div></div><small id="recovery-passphrase-help">อย่างน้อย 16 ตัวอักษร เก็บรหัสผ่านนี้แยกจากไฟล์กู้คืน หากรหัสผ่านหายจะเปิดชุดกู้คืนไม่ได้ ระบบไม่บันทึกรหัสผ่านไว้ในเบราว์เซอร์</small><div class="form-actions"><button id="recovery-export-submit" class="button primary" type="submit">เข้ารหัสและดาวน์โหลดชุดกู้คืน</button></div><p id="recovery-export-status" class="muted" role="status" hidden></p><p id="recovery-export-error" class="dialog-error" role="alert" hidden></p></form></section>
+<section class="panel"><h2>ข้อมูลที่ควรสำรอง</h2><p>สำรองฐานข้อมูลและ encryption key เดิมควบคู่กัน รวมถึงใบรับรองและข้อมูลตั้งค่าใน volume ก่อนเปลี่ยนรุ่น</p><p class="muted">หาก key เดิมหาย ระบบจะเข้าสู่การกู้คืนและไม่สร้าง key ใหม่ทับข้อมูลที่เข้ารหัสไว้</p></section>
+<section class="panel"><h2>รูปแบบหน้าจอ</h2><p class="muted">โหมดมืดและโหมดสว่างบันทึกเฉพาะในเบราว์เซอร์นี้</p><button id="settings-theme" class="button secondary" type="button">เปลี่ยนโหมดหน้าจอ</button></section>
+</section>
+
+</div><p id="initial-loading" class="initial-loading" role="status">กำลังตรวจสอบระบบ…</p></main><footer class="app-footer"><span>ERP Mobile Gateway</span><span id="last-updated">ดูแลหน่วยงานจากส่วนกลาง</span></footer></div></div>
+  <dialog id="suspend-dialog" aria-labelledby="suspend-heading" aria-describedby="suspend-description">
+    <form id="suspend-form">
+      <h2 id="suspend-heading">ระงับการใช้งานบนมือถือ</h2>
+      <p id="suspend-hospital" class="confirm-hospital"></p>
+      <p id="suspend-description">ผู้ใช้ทุกคนของหน่วยงานนี้ รวมผู้ที่เข้าสู่ระบบอยู่ จะใช้งานแอปต่อไม่ได้ตั้งแต่คำขอถัดไป เมื่อเปิดกลับ ผู้ใช้ต้องเข้าสู่ระบบใหม่</p>
+      <label for="suspend-reason">เหตุผลในการระงับ</label>
+      <textarea id="suspend-reason" name="reason" rows="3" maxlength="500" required></textarea>
+      <p id="suspend-error" class="dialog-error" role="alert" hidden></p>
+      <div class="form-actions"><button id="suspend-cancel" class="button secondary" type="button">ยกเลิก</button><button id="suspend-submit" class="button danger" type="submit">ยืนยันระงับการใช้งาน</button></div>
+    </form>
+  </dialog>
+  <dialog id="edit-dialog" aria-labelledby="edit-confirm-heading" aria-describedby="edit-confirm-description">
+    <form method="dialog">
+      <h2 id="edit-confirm-heading">ยืนยันการแก้ไขหน่วยงาน</h2>
+      <p id="edit-confirm-hospital" class="confirm-hospital"></p>
+      <p id="edit-confirm-description">การบันทึกจะระงับการใช้งานบนมือถือและยกเลิก session ทั้งหมดของหน่วยงานนี้ จากนั้นต้องทดสอบการเชื่อมต่อและอนุมัติใหม่</p>
+      <p>ปลายทางใหม่: <span id="edit-confirm-url" class="endpoint-text"></span></p>
+      <div class="form-actions"><button class="button secondary" value="cancel">ยกเลิก</button><button class="button primary" value="confirm">ยืนยันบันทึกการแก้ไข</button></div>
+    </form>
+  </dialog>
+
+<dialog id="update-confirm-dialog" aria-labelledby="update-confirm-heading"><form method="dialog"><h2 id="update-confirm-heading">ยืนยันส่งงานอัปเดต API</h2><p id="update-confirm-summary"></p><p class="muted">Updater จะดำเนินการเองตามแผน หน่วยงานออฟไลน์จะรอรับงานเมื่อเชื่อมต่อกลับ</p><div class="form-actions"><button class="button secondary" value="cancel">กลับไปแก้ไข</button><button class="button primary" value="confirm">ส่งงานอัปเดต</button></div></form></dialog>
+<dialog id="token-dialog" aria-labelledby="token-heading"><h2 id="token-heading">Token สำหรับ Updater</h2><p class="muted">แสดงครั้งเดียว เก็บไว้ใน secret ของ Updater หน่วยงานนี้ การสร้างใหม่จะยกเลิก token เดิม</p><label for="updater-token-value">Token</label><textarea id="updater-token-value" rows="3" readonly autocomplete="off"></textarea><div class="form-actions"><button id="token-copy" class="button secondary" type="button">คัดลอก</button><button id="token-close" class="button primary" type="button">ปิดและล้าง token</button></div></dialog>
+</body></html>
