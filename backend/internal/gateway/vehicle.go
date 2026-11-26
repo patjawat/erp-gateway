@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
+	"reflect"
 
 	"erp-platform/gateway/internal/contracts"
 )
@@ -78,9 +80,20 @@ func (s *Server) vehicle(w http.ResponseWriter, r *http.Request) {
 	var output any
 	var body []byte
 	var selection contracts.VehicleSelection
+	var optionsPage contracts.ReadPageSelection
 	if r.Method == http.MethodGet {
 		var queryErr error
-		selection, queryErr = contracts.VehicleQuery(r.URL.RawQuery, options)
+		query := r.URL.RawQuery
+		if options {
+			var rest url.Values
+			optionsPage, rest, queryErr = contracts.ReadPagination(query)
+			if queryErr != nil {
+				fail(w, 400, "INVALID_REQUEST", "ตัวเลือกการจองรถไม่ถูกต้อง")
+				return
+			}
+			query = rest.Encode()
+		}
+		selection, queryErr = contracts.VehicleQuery(query, options)
 		if queryErr != nil && kind != "detail" {
 			fail(w, 400, "INVALID_REQUEST", "ตัวเลือกการจองรถไม่ถูกต้อง")
 			return
@@ -126,6 +139,9 @@ func (s *Server) vehicle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	validOutput := validVehicleOutput(output)
+	if options {
+		validOutput = validOutput && validVehicleOptionPages(output.(*contracts.VehicleOptions), optionsPage)
+	}
 	if kind == "list" && r.Method == http.MethodGet {
 		history := output.(*contracts.VehicleHistory)
 		if selection.IncludeTypeCounts && history.TypeCounts == nil {
@@ -179,8 +195,18 @@ func validVehicleOutput(v any) bool {
 				return false
 			}
 		}
-		if x.CMISummary != nil && (x.CMISummary.ExpiringCount < 0 || x.CMISummary.ExpiredCount < 0 || x.CMISummary.MissingCount < 0 || x.CMISummary.ExpiringCount+x.CMISummary.ExpiredCount+x.CMISummary.MissingCount > len(x.Vehicles)) {
-			return false
+		vehicleTotal := len(x.Vehicles)
+		if x.VehiclesPage != nil && x.VehiclesPage.ReadPageMetadata != nil && x.VehiclesPage.TotalCount != nil {
+			vehicleTotal = *x.VehiclesPage.TotalCount
+		}
+		if x.CMISummary != nil {
+			remaining := vehicleTotal
+			for _, count := range []int{x.CMISummary.ExpiringCount, x.CMISummary.ExpiredCount, x.CMISummary.MissingCount} {
+				if count < 0 || count > remaining {
+					return false
+				}
+				remaining -= count
+			}
 		}
 		for _, item := range x.Drivers {
 			if !contracts.ValidVehiclePhotoURL(item.ImageURL, "driver") || (item.PendingMileageCount != nil && *item.PendingMileageCount < 0) {
@@ -208,6 +234,32 @@ func validVehicleOutput(v any) bool {
 }
 func validVehicleBookingSummary(v *contracts.VehicleBooking) bool {
 	return contracts.ValidMeetingID(v.ID) && contracts.ValidVehiclePhotoURL(v.VehicleImageURL, "vehicle") && contracts.ValidVehiclePhotoURL(v.DriverImageURL, "driver")
+}
+
+func validVehicleOptionPages(value *contracts.VehicleOptions, selection contracts.ReadPageSelection) bool {
+	if value.VehiclesPage == nil && value.DriversPage == nil {
+		return !selection.Explicit
+	}
+	if value.VehiclesPage == nil || value.DriversPage == nil {
+		return false
+	}
+	return value.VehiclesPage.ReadPageMetadata != nil && value.DriversPage.ReadPageMetadata != nil && contracts.ValidReadPage(value.VehiclesPage.ReadPageMetadata, len(value.VehiclesPage.Items), selection) && contracts.ValidReadPage(value.DriversPage.ReadPageMetadata, len(value.DriversPage.Items), selection) && reflect.DeepEqual(value.Vehicles, value.VehiclesPage.Items) && reflect.DeepEqual(value.Drivers, value.DriversPage.Items) && validVehicleDirectoryPage(value.Vehicles) && validVehicleDirectoryPage(value.Drivers)
+}
+
+func validVehicleDirectoryPage(items []contracts.VehicleDirectoryItem) bool {
+	seen := map[string]bool{}
+	for _, item := range items {
+		if !contracts.ValidMeetingID(item.ID) || seen[item.ID] || item.Name == "" || len(item.Name) > 4000 || len(item.Detail) > 4000 {
+			return false
+		}
+		switch item.Status {
+		case "available", "busy", "unavailable":
+		default:
+			return false
+		}
+		seen[item.ID] = true
+	}
+	return true
 }
 func (s *Server) relayVehicleError(w http.ResponseWriter, r *http.Response) {
 	if r.StatusCode == 401 || r.StatusCode == 429 {

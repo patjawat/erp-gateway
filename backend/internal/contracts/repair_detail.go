@@ -32,13 +32,15 @@ type RepairFeedback struct {
 	CreatedAt string `json:"created_at"`
 }
 type RepairDetail struct {
-	Record             Repair             `json:"record"`
-	Permissions        RepairPermissions  `json:"permissions"`
-	Timeline           []RepairEvent      `json:"timeline"`
-	TimelineHasMore    bool               `json:"timeline_has_more"`
-	Attachments        []RepairAttachment `json:"attachments"`
-	AttachmentsHasMore bool               `json:"attachments_has_more"`
-	Feedback           RepairFeedback     `json:"feedback"`
+	Record             Repair                      `json:"record"`
+	Permissions        RepairPermissions           `json:"permissions"`
+	Timeline           []RepairEvent               `json:"timeline"`
+	TimelineHasMore    bool                        `json:"timeline_has_more"`
+	Attachments        []RepairAttachment          `json:"attachments"`
+	AttachmentsHasMore bool                        `json:"attachments_has_more"`
+	Feedback           RepairFeedback              `json:"feedback"`
+	TimelinePage       *ReadPage[RepairEvent]      `json:"timeline_page,omitempty"`
+	AttachmentsPage    *ReadPage[RepairAttachment] `json:"attachments_page,omitempty"`
 }
 type RepairEdit struct {
 	Title             string `json:"title"`

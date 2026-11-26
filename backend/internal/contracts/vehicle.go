@@ -96,10 +96,12 @@ type VehicleCMISummary struct {
 	MissingCount  int `json:"missing_count"`
 }
 type VehicleOptions struct {
-	Vehicles   []VehicleDirectoryItem `json:"vehicles"`
-	Drivers    []VehicleDirectoryItem `json:"drivers"`
-	CanWrite   bool                   `json:"can_write"`
-	CMISummary *VehicleCMISummary     `json:"cmi_summary,omitempty"`
+	Vehicles     []VehicleDirectoryItem          `json:"vehicles"`
+	Drivers      []VehicleDirectoryItem          `json:"drivers"`
+	CanWrite     bool                            `json:"can_write"`
+	CMISummary   *VehicleCMISummary              `json:"cmi_summary,omitempty"`
+	VehiclesPage *ReadPage[VehicleDirectoryItem] `json:"vehicles_page,omitempty"`
+	DriversPage  *ReadPage[VehicleDirectoryItem] `json:"drivers_page,omitempty"`
 }
 type VehicleHistory struct {
 	Items      []VehicleBooking   `json:"items"`

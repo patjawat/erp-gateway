@@ -69,6 +69,7 @@ type Server struct {
 	usageRefresh       chan struct{}
 	management         *ManagementState
 	managementRevision string
+	directoryBackends  directoryBackendCache
 }
 
 func New(config Config) (*Server, error) {
@@ -703,7 +704,12 @@ func (s *Server) directory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	resp, err := s.upstream(r.Context(), h, "GET", "/depdrop/employee-by-id?"+query.Encode(), token, nil)
+	path, err := s.directoryUpstreamPath(r.Context(), h)
+	if err != nil {
+		upstreamUnavailable(w)
+		return
+	}
+	resp, err := s.upstream(r.Context(), h, "GET", path+"?"+query.Encode(), token, nil)
 	if err != nil {
 		upstreamUnavailable(w)
 		return

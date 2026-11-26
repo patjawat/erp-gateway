@@ -15,6 +15,7 @@ type VehicleDestination struct {
 type VehicleDestinationList struct {
 	Items    []VehicleDestination `json:"items"`
 	CanWrite bool                 `json:"can_write"`
+	*ReadPageMetadata
 }
 
 type VehicleDestinationInput struct {

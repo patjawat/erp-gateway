@@ -13,6 +13,7 @@ type MeetingUsage struct {
 	Date      string             `json:"date"`
 	CheckedAt string             `json:"checked_at"`
 	Items     []MeetingUsageItem `json:"items"`
+	*ReadPageMetadata
 }
 type MeetingUsageItem struct {
 	RoomID      string `json:"room_id"`

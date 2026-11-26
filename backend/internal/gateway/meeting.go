@@ -5,6 +5,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"erp-platform/gateway/internal/contracts"
@@ -53,6 +54,7 @@ func (s *Server) meeting(w http.ResponseWriter, r *http.Request) {
 	}
 	var output any
 	var body []byte
+	var usagePage contracts.ReadPageSelection
 	switch {
 	case path == "/api/meetings/options":
 		if r.URL.RawQuery != "" {
@@ -61,7 +63,10 @@ func (s *Server) meeting(w http.ResponseWriter, r *http.Request) {
 		}
 		output = &contracts.MeetingOptions{}
 	case path == "/api/meetings/usage":
-		if _, err := contracts.MeetingUsageQuery(r.URL.RawQuery); err != nil {
+		var queryErr error
+		var rest url.Values
+		usagePage, rest, queryErr = contracts.ReadPagination(r.URL.RawQuery)
+		if _, err := contracts.MeetingUsageQuery(rest.Encode()); queryErr != nil || err != nil {
 			fail(w, 400, "INVALID_REQUEST", "กรุณาระบุวันที่ดูการใช้ห้องประชุมให้ถูกต้อง")
 			return
 		}
@@ -128,7 +133,7 @@ func (s *Server) meeting(w http.ResponseWriter, r *http.Request) {
 		upstreamUnavailable(w)
 		return
 	}
-	if usage, ok := output.(*contracts.MeetingUsage); ok && usage.Date != r.URL.Query().Get("date") {
+	if usage, ok := output.(*contracts.MeetingUsage); ok && (usage.Date != r.URL.Query().Get("date") || !contracts.ValidReadPage(usage.ReadPageMetadata, len(usage.Items), usagePage)) {
 		upstreamUnavailable(w)
 		return
 	}

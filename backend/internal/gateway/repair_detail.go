@@ -17,6 +17,10 @@ func (s *Server) repairDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/repairs/"), "/")
+	if len(parts) == 2 && repairPathID.MatchString(parts[0]) && (parts[1] == "timeline" || parts[1] == "attachments" && r.Method == http.MethodGet) {
+		s.repairReadPage(w, r, h, token, parts[0], parts[1])
+		return
+	}
 	if len(parts) == 2 && parts[1] == "attachments" && repairPathID.MatchString(parts[0]) && r.URL.RawQuery == "" {
 		s.repairUpload(w, r, h, token)
 		return
@@ -95,7 +99,7 @@ func (s *Server) repairDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var value contracts.RepairDetail
-	if readEnvelopeLimit(response, &value, 8*1024*1024) != nil || value.Record.ID != parts[0] || value.Timeline == nil || value.Attachments == nil || len(value.Timeline) > 200 || len(value.Attachments) > 100 {
+	if readEnvelopeLimit(response, &value, 8*1024*1024) != nil || value.Record.ID != parts[0] || value.Timeline == nil || value.Attachments == nil || len(value.Timeline) > 200 || len(value.Attachments) > 100 || !validRepairDetailPages(&value, parts[0]) {
 		upstreamUnavailable(w)
 		return
 	}

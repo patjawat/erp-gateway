@@ -21,13 +21,26 @@ func (s *Server) vehicleDestinations(w http.ResponseWriter, r *http.Request) {
 	path := "/api/vehicles/destinations"
 	var body []byte
 	var output any
+	var page contracts.ReadPageSelection
 	if r.Method == http.MethodGet {
-		query, err := contracts.VehicleDestinationQuery(r.URL.RawQuery)
-		if err != nil {
+		var pageErr error
+		var rest url.Values
+		page, rest, pageErr = contracts.ReadPagination(r.URL.RawQuery)
+		query, err := contracts.VehicleDestinationQuery(rest.Encode())
+		if pageErr != nil || err != nil {
 			fail(w, 400, "INVALID_REQUEST", "คำค้นหาจุดหมายปลายทางไม่ถูกต้อง")
 			return
 		}
-		path += "?" + url.Values{"q": {query}}.Encode()
+		values := url.Values{"q": {query}}
+		if page.Explicit {
+			original, _ := url.ParseQuery(r.URL.RawQuery)
+			for _, key := range []string{"page", "per_page"} {
+				if original.Has(key) {
+					values.Set(key, original.Get(key))
+				}
+			}
+		}
+		path += "?" + values.Encode()
 		output = &contracts.VehicleDestinationList{}
 	} else {
 		if r.URL.RawQuery != "" {
@@ -61,7 +74,7 @@ func (s *Server) vehicleDestinations(w http.ResponseWriter, r *http.Request) {
 	valid := false
 	switch value := output.(type) {
 	case *contracts.VehicleDestinationList:
-		valid = contracts.ValidVehicleDestinations(value.Items)
+		valid = contracts.ValidVehicleDestinations(value.Items) && contracts.ValidReadPage(value.ReadPageMetadata, len(value.Items), page)
 	case *contracts.VehicleDestination:
 		valid = contracts.ValidVehicleDestination(*value)
 	}
