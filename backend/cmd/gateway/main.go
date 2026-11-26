@@ -50,15 +50,47 @@ func entries(key string) []string {
 }
 
 func webPolicyFromEnvironment() (webtransport.Policy, error) {
+	setupEnabled, err := setupFromEnvironment()
+	if err != nil {
+		return webtransport.Policy{}, err
+	}
 	allowLANHTTP, err := boolean("GATEWAY_ALLOW_LAN_HTTP", false)
 	if err != nil {
 		return webtransport.Policy{}, errors.New("invalid GATEWAY_ALLOW_LAN_HTTP: use true or false")
 	}
-	policy, err := webtransport.New(allowLANHTTP, entries("GATEWAY_LAN_HTTP_CIDRS"))
+	cidrs := entries("GATEWAY_LAN_HTTP_CIDRS")
+	if setupEnabled != nil && !allowLANHTTP && len(cidrs) == 0 {
+		return webtransport.DefaultSetupPolicy(), nil
+	}
+	policy, err := webtransport.New(allowLANHTTP, cidrs)
 	if err != nil {
 		return webtransport.Policy{}, fmt.Errorf("invalid GATEWAY_LAN_HTTP_CIDRS: %w", err)
 	}
 	return policy, nil
+}
+
+// A missing switch preserves manual/legacy bootstrap callers. Both explicit
+// values use the managed transport policy; the switch gates Setup only.
+func setupFromEnvironment() (*bool, error) {
+	value, present := os.LookupEnv("SETUP")
+	if !present {
+		return nil, nil
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		return nil, errors.New("invalid SETUP: use true or false")
+	}
+	return &enabled, nil
+}
+
+func setupCodeAllowed(setupEnabled *bool, configured bool) error {
+	if configured {
+		return errors.New("Gateway is configured; use the authenticated administrator interface")
+	}
+	if setupEnabled != nil && !*setupEnabled {
+		return errors.New("Setup is disabled by SETUP=false; enable SETUP to issue a code for an unconfigured or recovery system")
+	}
+	return nil
 }
 
 func fileExists(name string) bool {
@@ -69,6 +101,10 @@ func main() {
 	address := env("LISTEN_ADDR", ":8080")
 	databasePath := env("GATEWAY_DATABASE_PATH", "data/gateway.db")
 	configDir := env("GATEWAY_CONFIG_DIR", "data/config")
+	setupEnabled, err := setupFromEnvironment()
+	if err != nil {
+		log.Fatal(err)
+	}
 	if len(os.Args) == 4 && os.Args[1] == "restore-config" {
 		webPolicy, err := webPolicyFromEnvironment()
 		if err != nil {
@@ -121,14 +157,17 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		configured := false
 		if cfg, key, err := bootstrap.LoadRuntime(configDir); err == nil && bootstrap.CheckDatabaseKey(databasePath, key) == nil {
-			_, urlErr := webPolicy.ValidateURL(cfg.PublicURL)
+			runtimePolicy, policyErr := cfg.ManagementPolicy(webPolicy)
+			_, urlErr := runtimePolicy.ValidateURL(cfg.PublicURL)
 			certPEM, certErr := os.ReadFile(cfg.ClientCertFile)
 			keyPEM, keyErr := os.ReadFile(cfg.ClientKeyFile)
 			_, identityErr := bootstrap.ValidateIdentity(certPEM, keyPEM)
-			if urlErr == nil && certErr == nil && keyErr == nil && identityErr == nil && gateway.ValidateUpstreamPolicy(cfg.ApprovedUpstreams, cfg.PrivateUpstreamCIDRs) == nil {
-				log.Fatal("Gateway is configured; use the authenticated administrator interface")
-			}
+			configured = policyErr == nil && urlErr == nil && certErr == nil && keyErr == nil && identityErr == nil && gateway.ValidateUpstreamPolicy(cfg.ApprovedUpstreams, cfg.PrivateUpstreamCIDRs) == nil
+		}
+		if err := setupCodeAllowed(setupEnabled, configured); err != nil {
+			log.Fatal(err)
 		}
 		code, err := bootstrap.IssueSetupCode(configDir)
 		if err != nil {
@@ -156,6 +195,10 @@ func main() {
 	var manager *bootstrap.Manager
 	management := &gateway.ManagementState{}
 	build := func(c bootstrap.RuntimeConfig, key []byte) (bootstrap.Runtime, error) {
+		runtimePolicy, err := c.ManagementPolicy(webPolicy)
+		if err != nil {
+			return bootstrap.Runtime{}, err
+		}
 		if err := bootstrap.CheckDatabaseKey(databasePath, key); err != nil {
 			return bootstrap.Runtime{}, err
 		}
@@ -187,7 +230,7 @@ func main() {
 				return bootstrap.Runtime{}, err
 			}
 		}
-		cfg := gateway.Config{Store: store, AdminUsername: c.AdminUsername, PublicURL: c.PublicURL, WebPolicy: webPolicy, CookieSecure: !webPolicy.IsLANHTTPURL(c.PublicURL), TrustedProxyCIDRs: c.TrustedProxyCIDRs, ApprovedUpstreams: c.ApprovedUpstreams, PrivateUpstreamCIDRs: c.PrivateUpstreamCIDRs, NotificationSender: sender, GatewayClientCert: &clientCert, HospitalServerRoots: hospitalRoots, Management: management}
+		cfg := gateway.Config{Store: store, AdminUsername: c.AdminUsername, PublicURL: c.PublicURL, WebPolicy: runtimePolicy, CookieSecure: !runtimePolicy.IsLANHTTPURL(c.PublicURL), TrustedProxyCIDRs: c.TrustedProxyCIDRs, ApprovedUpstreams: c.ApprovedUpstreams, PrivateUpstreamCIDRs: c.PrivateUpstreamCIDRs, NotificationSender: sender, GatewayClientCert: &clientCert, HospitalServerRoots: hospitalRoots, Management: management}
 		if c.Version == 1 {
 			cfg.AdminPasswordVerifier = c.VerifyPassword
 			cfg.IdentityDirectory = filepath.Join(configDir, "csr")
@@ -259,7 +302,7 @@ func main() {
 			log.Print("legacy encryption key is invalid; local recovery is available and no replacement key was generated")
 		}
 	}
-	manager, err = bootstrap.New(bootstrap.Options{Directory: configDir, DatabasePath: databasePath, PublicSetupURL: os.Getenv("GATEWAY_SETUP_PUBLIC_URL"), WebPolicy: webPolicy, TrustedProxyCIDRs: entries("GATEWAY_TRUSTED_PROXY_CIDRS"), LocalSetupCIDRs: entries("GATEWAY_SETUP_LOCAL_PROXY_CIDRS"), Build: build, ValidatePolicy: gateway.ValidateUpstreamPolicy, Assets: admin.LegacyHandler(), Legacy: legacy})
+	manager, err = bootstrap.New(bootstrap.Options{Directory: configDir, DatabasePath: databasePath, PublicSetupURL: os.Getenv("GATEWAY_SETUP_PUBLIC_URL"), WebPolicy: webPolicy, SetupEnabled: setupEnabled, TrustedProxyCIDRs: entries("GATEWAY_TRUSTED_PROXY_CIDRS"), LocalSetupCIDRs: entries("GATEWAY_SETUP_LOCAL_PROXY_CIDRS"), Build: build, ValidatePolicy: gateway.ValidateUpstreamPolicy, Assets: admin.LegacyHandler(), Legacy: legacy})
 	if err != nil {
 		if legacy != nil && legacy.Close != nil {
 			legacy.Close()
@@ -276,7 +319,7 @@ func main() {
 		defer cancel()
 		_ = server.Shutdown(shutdown)
 	}()
-	log.Printf("gateway listening on %s (unconfigured systems expose local setup only)", address)
+	log.Printf("gateway listening on %s (Setup follows the configured switch and transport policy)", address)
 	if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Print("Gateway listener failed: ", err)
 		return

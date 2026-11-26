@@ -31,18 +31,28 @@ import (
 const passwordIterations = 600000
 
 type RuntimeConfig struct {
-	Version              int      `json:"version"`
-	AdminUsername        string   `json:"admin_username"`
-	PasswordSalt         string   `json:"password_salt"`
-	PasswordHash         string   `json:"password_hash"`
-	PasswordIterations   int      `json:"password_iterations"`
-	PublicURL            string   `json:"public_url"`
-	TrustedProxyCIDRs    []string `json:"trusted_proxy_cidrs"`
-	ApprovedUpstreams    []string `json:"approved_upstreams"`
-	PrivateUpstreamCIDRs []string `json:"private_upstream_cidrs"`
-	ClientCertFile       string   `json:"client_cert_file"`
-	ClientKeyFile        string   `json:"client_key_file"`
-	HospitalCAFile       string   `json:"hospital_ca_file,omitempty"`
+	Version              int                    `json:"version"`
+	AdminUsername        string                 `json:"admin_username"`
+	PasswordSalt         string                 `json:"password_salt"`
+	PasswordHash         string                 `json:"password_hash"`
+	PasswordIterations   int                    `json:"password_iterations"`
+	PublicURL            string                 `json:"public_url"`
+	WebAccess            *webtransport.Settings `json:"web_access,omitempty"`
+	TrustedProxyCIDRs    []string               `json:"trusted_proxy_cidrs"`
+	ApprovedUpstreams    []string               `json:"approved_upstreams"`
+	PrivateUpstreamCIDRs []string               `json:"private_upstream_cidrs"`
+	ClientCertFile       string                 `json:"client_cert_file"`
+	ClientKeyFile        string                 `json:"client_key_file"`
+	HospitalCAFile       string                 `json:"hospital_ca_file,omitempty"`
+}
+
+// ManagementPolicy resolves durable policy before environment defaults. Archives
+// and older configs cannot bypass policy validation through malformed settings.
+func (c RuntimeConfig) ManagementPolicy(fallback webtransport.Policy) (webtransport.Policy, error) {
+	if c.WebAccess != nil {
+		return webtransport.FromSettings(*c.WebAccess)
+	}
+	return fallback, nil
 }
 
 type Input struct {

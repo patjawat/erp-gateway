@@ -113,6 +113,35 @@ describe("management workflows", () => {
     expect(settings.reviewing()).toBe(true);
   });
 
+  it.each(["localhost", "127.0.0.1", "127.10.0.2", "[::1]"])(
+    "reviews HTTP %s only with the separate local capability",
+    (host) => {
+      const { settings } = setup();
+      settings.data.set({ ...saved, local_http_enabled: true });
+      settings.open("settings");
+      settings.draft.public_url = `http://${host}:8080`;
+      settings.review();
+      expect(settings.modalError()).toBe("");
+      expect(settings.reviewing()).toBe(true);
+    },
+  );
+
+  it.each([
+    { lan_http_enabled: true, url: "http://localhost:8080" },
+    { lan_http_enabled: true, url: "http://127.0.0.1:8080" },
+    { local_http_enabled: true, url: "http://10.10.8.127:8080" },
+    { local_http_enabled: true, url: "http://2130706433:8080" },
+    { local_http_enabled: true, url: "http://0x7f000001:8080" },
+  ])("does not broaden one HTTP capability into another: $url", ({ url, ...capability }) => {
+    const { settings } = setup();
+    settings.data.set({ ...saved, ...capability });
+    settings.open("settings");
+    settings.draft.public_url = url;
+    settings.review();
+    expect(settings.reviewing()).toBe(false);
+    expect(settings.modalError()).not.toBe("");
+  });
+
   it.each([
     "http://8.8.8.8:8080",
     "http://172.15.0.10",

@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -45,6 +46,7 @@ type Options struct {
 	PublicSetupURL    string
 	TrustedProxyCIDRs []string
 	WebPolicy         webtransport.Policy
+	SetupEnabled      *bool
 	LocalSetupCIDRs   []string
 	Build             func(RuntimeConfig, []byte) (Runtime, error)
 	ValidatePolicy    func([]string, []string) error
@@ -60,6 +62,7 @@ type running struct {
 type setupSession struct {
 	csrf    string
 	expires time.Time
+	origin  string
 }
 
 type attempt struct {
@@ -68,15 +71,18 @@ type attempt struct {
 }
 
 type Manager struct {
-	options  Options
-	mu       sync.Mutex
-	current  *running
-	config   RuntimeConfig
-	key      []byte
-	state    string
-	reason   string
-	sessions map[string]setupSession
-	attempts map[string]attempt
+	options   Options
+	mu        sync.Mutex
+	closed    bool
+	closeOnce sync.Once
+	retired   sync.WaitGroup
+	current   *running
+	config    RuntimeConfig
+	key       []byte
+	state     string
+	reason    string
+	sessions  map[string]setupSession
+	attempts  map[string]attempt
 }
 
 func New(options Options) (*Manager, error) {
@@ -107,6 +113,12 @@ func New(options Options) (*Manager, error) {
 		if err == nil {
 			var runtime Runtime
 			runtime, err = options.Build(cfg, key)
+			if err == nil && options.SetupEnabled != nil && cfg.WebAccess == nil {
+				cfg, err = m.snapshotPolicy(cfg, key)
+				if err != nil && runtime.Close != nil {
+					runtime.Close()
+				}
+			}
 			if err == nil {
 				m.config, m.key = cfg, key
 				m.install(runtime)
@@ -127,7 +139,11 @@ func New(options Options) (*Manager, error) {
 }
 
 func (m *Manager) validateStored(c RuntimeConfig, key []byte) error {
-	if _, err := m.options.WebPolicy.ValidateURL(c.PublicURL); err != nil {
+	policy, err := c.ManagementPolicy(m.options.WebPolicy)
+	if err != nil {
+		return err
+	}
+	if _, err := policy.ValidateURL(c.PublicURL); err != nil {
 		return err
 	}
 	cert, err := readBounded(c.ClientCertFile, 256<<10)
@@ -158,6 +174,47 @@ func (m *Manager) validateStored(c RuntimeConfig, key []byte) error {
 	return CheckDatabaseKey(m.options.DatabasePath, key)
 }
 
+// snapshotPolicy adds only the resolved policy to a healthy older installation.
+// It refuses concurrent config/key edits and never regenerates identity or data.
+func (m *Manager) snapshotPolicy(cfg RuntimeConfig, key []byte) (RuntimeConfig, error) {
+	unlock, err := lockDirectory(m.options.Directory)
+	if err != nil {
+		return cfg, err
+	}
+	defer unlock()
+	current, currentKey, err := LoadRuntime(m.options.Directory)
+	if err != nil {
+		return cfg, err
+	}
+	want, _ := json.Marshal(cfg)
+	got, _ := json.Marshal(current)
+	if !bytes.Equal(want, got) || subtle.ConstantTimeCompare(key, currentKey) != 1 {
+		return cfg, errors.New("configuration changed while resolving management policy")
+	}
+	policy, err := cfg.ManagementPolicy(m.options.WebPolicy)
+	if err != nil {
+		return cfg, err
+	}
+	settings := policy.Settings()
+	cfg.WebAccess = &settings
+	if err = persistJSON(filepath.Join(m.options.Directory, "runtime.json"), cfg); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func (m *Manager) setupEnabled() bool {
+	return m.options.SetupEnabled == nil || *m.options.SetupEnabled
+}
+
+func (m *Manager) managementPolicy() webtransport.Policy {
+	policy, err := m.config.ManagementPolicy(m.options.WebPolicy)
+	if err != nil {
+		return webtransport.Policy{}
+	}
+	return policy
+}
+
 func (m *Manager) install(runtime Runtime) {
 	old := m.current
 	if old != nil && old.Stop != nil {
@@ -168,32 +225,45 @@ func (m *Manager) install(runtime Runtime) {
 	if runtime.Start != nil {
 		runtime.Start()
 	}
-	if old != nil && old.Close != nil {
-		go func() { old.requests.Wait(); old.Close() }()
+	if old != nil {
+		// install is serialized with Close by m.mu (except initial construction).
+		m.retired.Add(1)
+		go func() {
+			defer m.retired.Done()
+			old.requests.Wait()
+			if old.Close != nil {
+				old.Close()
+			}
+		}()
 	}
 }
 
 func (m *Manager) Close() {
-	m.mu.Lock()
-	current := m.current
-	m.current = nil
-	m.mu.Unlock()
-	if current != nil {
-		if current.Stop != nil {
-			current.Stop()
+	m.closeOnce.Do(func() {
+		m.mu.Lock()
+		m.closed = true
+		current := m.current
+		m.current = nil
+		m.mu.Unlock()
+		if current != nil {
+			if current.Stop != nil {
+				current.Stop()
+			}
+			current.requests.Wait()
+			if current.Close != nil {
+				current.Close()
+			}
 		}
-		current.requests.Wait()
-		if current.Close != nil {
-			current.Close()
-		}
-	}
+		m.retired.Wait()
+	})
 }
 
 // Status is safe to expose through authenticated Admin; it never contains secrets.
 func (m *Manager) Status() any {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return map[string]any{"state": m.state, "public_url": m.gatewayURL(), "lan_http_enabled": m.options.WebPolicy.LANHTTPEnabled(), "persistent": m.config.Version == 1, "issuer_configured": false}
+	policy := m.managementPolicy()
+	return map[string]any{"state": m.state, "public_url": m.gatewayURL(), "lan_http_enabled": policy.LANHTTPEnabled(), "local_http_enabled": policy.LocalHTTPEnabled(), "setup_enabled": m.setupEnabled() && m.current == nil && !m.closed, "persistent": m.config.Version == 1, "issuer_configured": false}
 }
 
 // gatewayURL is read with m.mu held; the initial setup URL is useful before a
@@ -214,6 +284,11 @@ func (m *Manager) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		jsonError(w, 503, "GATEWAY_UNAVAILABLE", "Gateway ปิดการทำงานแล้ว")
+		return
+	}
 	current := m.current
 	if current != nil && !strings.HasPrefix(r.URL.Path, "/setup") {
 		current.requests.Add(1)
@@ -225,23 +300,32 @@ func (m *Manager) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	active := current != nil
 	state := m.state
 	gatewayURL := m.gatewayURL()
+	policy := m.managementPolicy()
 	m.mu.Unlock()
 	if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
 		jsonData(w, map[string]any{"status": "ok", "state": state})
 		return
 	}
 	if active {
-		if m.options.WebPolicy.IsLANHTTPURL(gatewayURL) && !m.options.WebPolicy.AllowsLANRequest(r, gatewayURL) {
+		if policy.IsLANHTTPURL(gatewayURL) && !policy.AllowsLANRequest(r, gatewayURL) {
 			jsonError(w, 403, "LOCAL_SETUP_REQUIRED", "เปิดหน้าตั้งค่าจาก IP และเครือข่ายภายในที่ผู้ดูแลกำหนดไว้")
 			return
 		}
 		if r.URL.Path == "/setup/api/status" && r.Method == http.MethodGet {
-			jsonData(w, map[string]any{"state": "active", "authenticated": false, "existing_data": true, "public_url": gatewayURL, "lan_http_enabled": m.options.WebPolicy.LANHTTPEnabled()})
+			data := map[string]any{"state": "active", "authenticated": false, "existing_data": true, "lan_http_enabled": policy.LANHTTPEnabled(), "local_http_enabled": policy.LocalHTTPEnabled(), "setup_enabled": false}
+			if m.options.SetupEnabled == nil {
+				data["public_url"] = gatewayURL
+			}
+			jsonData(w, data)
 		} else if strings.HasPrefix(r.URL.Path, "/setup/api/") {
 			jsonError(w, 410, "SETUP_CLOSED", "ตั้งค่าแล้ว กรุณาเข้าสู่ระบบผู้ดูแล")
 		} else {
 			http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 		}
+		return
+	}
+	if !m.setupEnabled() {
+		jsonError(w, 403, "SETUP_DISABLED", "ปิดการตั้งค่าครั้งแรกไว้ ตั้ง SETUP=true แล้วสร้าง container ใหม่เมื่อต้องการตั้งค่าหรือกู้คืน")
 		return
 	}
 	if !m.allowedSetupRequest(r) {
@@ -253,9 +337,15 @@ func (m *Manager) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		session, ok := m.session(r)
-		data := map[string]any{"state": m.state, "reason": m.reason, "authenticated": ok, "existing_data": existingDatabase(m.options.DatabasePath), "code_command": "docker compose exec gateway /usr/local/bin/gateway setup-code", "public_url": m.gatewayURL(), "lan_http_enabled": m.options.WebPolicy.LANHTTPEnabled()}
+		data := map[string]any{"state": m.state, "reason": m.reason, "authenticated": ok, "existing_data": existingDatabase(m.options.DatabasePath), "code_command": "docker compose exec gateway /usr/local/bin/gateway setup-code", "lan_http_enabled": policy.LANHTTPEnabled(), "local_http_enabled": policy.LocalHTTPEnabled(), "setup_enabled": true}
+		if m.options.SetupEnabled == nil {
+			data["public_url"] = m.gatewayURL()
+		}
 		if ok {
 			data["csrf_token"] = session.csrf
+			if m.options.SetupEnabled != nil {
+				data["public_url"] = session.origin
+			}
 		}
 		jsonData(w, data)
 	case r.URL.Path == "/setup/api/session" && r.Method == http.MethodPost:
@@ -288,6 +378,10 @@ func (m *Manager) serveHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Manager) allowedSetupRequest(r *http.Request) bool {
+	if m.options.SetupEnabled != nil && m.options.PublicSetupURL == "" {
+		_, ok := m.options.WebPolicy.BootstrapOrigin(r)
+		return ok
+	}
 	if m.options.WebPolicy.IsLANHTTPURL(m.options.PublicSetupURL) {
 		return m.options.WebPolicy.AllowsLANRequest(r, m.options.PublicSetupURL)
 	}
@@ -337,6 +431,10 @@ func (m *Manager) allowedSetupRequest(r *http.Request) bool {
 }
 
 func (m *Manager) sameOrigin(r *http.Request) bool {
+	if m.options.SetupEnabled != nil && m.options.PublicSetupURL == "" {
+		origin, ok := m.options.WebPolicy.BootstrapOrigin(r)
+		return ok && r.Header.Get("Origin") == origin
+	}
 	if m.options.WebPolicy.IsLANHTTPURL(m.options.PublicSetupURL) {
 		return m.options.WebPolicy.AllowsLANOrigin(r, m.options.PublicSetupURL)
 	}
@@ -370,7 +468,34 @@ func (m *Manager) session(r *http.Request) (setupSession, bool) {
 		return setupSession{}, false
 	}
 	s, ok := m.sessions[hashToken(cookie.Value)]
-	return s, ok && time.Now().Before(s.expires)
+	if !ok || !time.Now().Before(s.expires) {
+		return setupSession{}, false
+	}
+	if s.origin != "" {
+		origin, valid := m.setupOrigin(r)
+		if !valid || origin != s.origin {
+			return setupSession{}, false
+		}
+	}
+	return s, true
+}
+
+func (m *Manager) setupOrigin(r *http.Request) (string, bool) {
+	if m.options.PublicSetupURL == "" {
+		return m.options.WebPolicy.BootstrapOrigin(r)
+	}
+	if !m.allowedSetupRequest(r) {
+		return "", false
+	}
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	u, err := m.options.WebPolicy.ValidateURL(scheme + "://" + r.Host)
+	if err != nil {
+		return "", false
+	}
+	return u.Scheme + "://" + u.Host, true
 }
 
 type codeRecord struct {
@@ -410,6 +535,10 @@ func (m *Manager) login(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		jsonError(w, 503, "GATEWAY_UNAVAILABLE", "Gateway ปิดการทำงานแล้ว")
+		return
+	}
 	if m.current != nil {
 		jsonError(w, 410, "SETUP_CLOSED", "ตั้งค่าแล้ว กรุณาเข้าสู่ระบบผู้ดูแล")
 		return
@@ -438,6 +567,15 @@ func (m *Manager) login(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 401, "INVALID_SETUP_CODE", "รหัสตั้งค่าไม่ถูกต้อง หมดอายุ หรือถูกใช้แล้ว ขอรหัสใหม่จากคำสั่งบนเครื่อง Gateway")
 		return
 	}
+	origin := ""
+	if m.options.SetupEnabled != nil {
+		var valid bool
+		origin, valid = m.setupOrigin(r)
+		if !valid {
+			jsonError(w, 403, "CSRF_REJECTED", "เปิดหน้าตั้งค่าจากที่อยู่เดียวกันแล้วลองใหม่")
+			return
+		}
+	}
 	sessionToken, err := token()
 	if err != nil {
 		jsonError(w, 503, "SETUP_UNAVAILABLE", "สร้าง session ไม่สำเร็จ")
@@ -457,10 +595,19 @@ func (m *Manager) login(w http.ResponseWriter, r *http.Request) {
 			delete(m.sessions, k)
 		}
 	}
-	m.sessions[hashToken(sessionToken)] = setupSession{csrf: csrf, expires: now.Add(20 * time.Minute)}
+	m.sessions[hashToken(sessionToken)] = setupSession{csrf: csrf, expires: now.Add(20 * time.Minute), origin: origin}
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{Name: setupCookie, Value: sessionToken, Path: "/setup/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: 1200})
-	jsonData(w, map[string]string{"csrf_token": csrf})
+	data := map[string]any{"authenticated": true, "csrf_token": csrf, "lan_http_enabled": m.options.WebPolicy.LANHTTPEnabled(), "local_http_enabled": m.options.WebPolicy.LocalHTTPEnabled(), "setup_enabled": true}
+	if m.options.SetupEnabled != nil {
+		data["public_url"] = origin
+	} else {
+		data["public_url"] = m.gatewayURL()
+		if u, err := m.options.WebPolicy.ValidateURL(m.gatewayURL()); err == nil {
+			data["public_url"] = u.Scheme + "://" + u.Host
+		}
+	}
+	jsonData(w, data)
 }
 
 func (m *Manager) configure(w http.ResponseWriter, r *http.Request, activate bool) {
@@ -470,6 +617,10 @@ func (m *Manager) configure(w http.ResponseWriter, r *http.Request, activate boo
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		jsonError(w, 503, "GATEWAY_UNAVAILABLE", "Gateway ปิดการทำงานแล้ว")
+		return
+	}
 	if m.current != nil {
 		jsonError(w, 410, "SETUP_CLOSED", "ตั้งค่าแล้ว กรุณาเข้าสู่ระบบผู้ดูแล")
 		return
@@ -539,6 +690,10 @@ func (m *Manager) configure(w http.ResponseWriter, r *http.Request, activate boo
 		return
 	}
 	cfg.PublicURL, cfg.TrustedProxyCIDRs, cfg.ApprovedUpstreams, cfg.PrivateUpstreamCIDRs = in.PublicURL, in.TrustedProxyCIDRs, in.ApprovedUpstreams, in.PrivateUpstreamCIDRs
+	if m.options.SetupEnabled != nil {
+		settings := m.options.WebPolicy.Settings()
+		cfg.WebAccess = &settings
+	}
 	cfg, err = m.identityFiles(cfg, []byte(in.ClientCertificatePEM), []byte(in.ClientPrivateKeyPEM), []byte(in.HospitalCAPEM))
 	if err != nil {
 		jsonError(w, 503, "SETUP_UNAVAILABLE", "บันทึกใบรับรองไม่สำเร็จ")
@@ -689,6 +844,10 @@ func (m *Manager) createCSR(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		jsonError(w, 503, "GATEWAY_UNAVAILABLE", "Gateway ปิดการทำงานแล้ว")
+		return
+	}
 	if m.current != nil {
 		jsonError(w, 410, "SETUP_CLOSED", "ตั้งค่าแล้ว กรุณาเข้าสู่ระบบผู้ดูแล")
 		return

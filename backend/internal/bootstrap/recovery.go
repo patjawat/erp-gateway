@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -205,7 +206,19 @@ func validateRecoveryPayloadWithPolicy(p RecoveryPayload, validatePolicy func([]
 	if err != nil || len(key) != 32 {
 		return nil, errors.New("invalid recovery encryption key")
 	}
-	if err = validatePublicSettingsWithPolicy(publicSettings(p.Config), validatePolicy, policy); err != nil {
+	// Restoring an archive must not enable a transport the destination operator
+	// did not allow, even when that archive contains its own saved policy.
+	if _, err = policy.ValidateURL(p.Config.PublicURL); err != nil {
+		return nil, err
+	}
+	savedPolicy, err := p.Config.ManagementPolicy(policy)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateRecoveryAccessScope(savedPolicy, policy); err != nil {
+		return nil, err
+	}
+	if err = validatePublicSettingsWithPolicy(publicSettings(p.Config), validatePolicy, savedPolicy); err != nil {
 		return nil, err
 	}
 	if _, err = ValidateIdentity([]byte(p.ClientCertificatePEM), []byte(p.ClientPrivateKeyPEM)); err != nil {
@@ -215,6 +228,36 @@ func validateRecoveryPayloadWithPolicy(p RecoveryPayload, validatePolicy func([]
 		return nil, err
 	}
 	return key, nil
+}
+
+// A trusted archive may preserve a narrower scope, but it must not grant more
+// plaintext clients or transports than the destination operator explicitly chose.
+func validateRecoveryAccessScope(saved, operator webtransport.Policy) error {
+	scope, ceiling := saved.Settings(), operator.Settings()
+	if (scope.AllowLANHTTP && !ceiling.AllowLANHTTP) || (scope.AllowLocalHTTP && !ceiling.AllowLocalHTTP) {
+		return errors.New("recovery management policy exceeds the destination transport policy")
+	}
+	if !scope.AllowLANHTTP {
+		return nil
+	}
+	for _, value := range scope.LANHTTPCIDRs {
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			return errors.New("invalid recovery management client network")
+		}
+		allowed := false
+		for _, candidate := range ceiling.LANHTTPCIDRs {
+			network, err := netip.ParsePrefix(candidate)
+			if err == nil && network.Addr().BitLen() == prefix.Addr().BitLen() && prefix.Bits() >= network.Bits() && network.Contains(prefix.Addr()) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return errors.New("recovery management client scope exceeds the destination allowlist")
+		}
+	}
+	return nil
 }
 
 // RestoreRecovery writes only fixed file names in a NEW private directory.
@@ -233,6 +276,10 @@ func RestoreRecoveryWithPolicy(ctx context.Context, archive []byte, passphrase, 
 	key, err := validateRecoveryPayloadWithPolicy(payload, validatePolicy, policy)
 	if err != nil {
 		return err
+	}
+	if payload.Config.WebAccess == nil {
+		settings := policy.Settings()
+		payload.Config.WebAccess = &settings
 	}
 	if err = ctx.Err(); err != nil {
 		return err

@@ -118,3 +118,71 @@ func TestHTTPAuthorityMatchesBrowserNormalization(t *testing.T) {
 		t.Fatal("HTTP normalization changed HTTPS authority")
 	}
 }
+
+func TestManagedSetupPolicySerializationAndOrigins(t *testing.T) {
+	policy := DefaultSetupPolicy()
+	if !policy.LANHTTPEnabled() || !policy.LocalHTTPEnabled() {
+		t.Fatal("managed Setup defaults do not support private/local browsers")
+	}
+	for _, test := range []struct{ origin, peer string }{
+		{"http://10.10.8.127:8080", "10.10.8.20:1234"},
+		{"http://localhost:8080", "172.18.0.1:1234"},
+		{"http://127.0.0.1:8080", "127.0.0.1:1234"},
+		{"http://[::1]:8080", "[::1]:1234"},
+		{"http://[fd12::1]:8080", "[fd12::20]:1234"},
+	} {
+		r := httptest.NewRequest("GET", test.origin+"/setup/", nil)
+		r.RemoteAddr = test.peer
+		if origin, ok := policy.BootstrapOrigin(r); !ok || origin != test.origin {
+			t.Errorf("direct origin denied: %s", test.origin)
+		}
+		r.Header.Set("X-Forwarded-Proto", "https")
+		if _, ok := policy.BootstrapOrigin(r); ok {
+			t.Errorf("proxy metadata granted bootstrap at %s", test.origin)
+		}
+	}
+	for _, test := range []struct{ origin, peer string }{
+		{"http://gateway.example.org:8080", "10.10.8.20:1234"},
+		{"http://203.0.113.1:8080", "10.10.8.20:1234"},
+		{"http://10.10.8.127:8080", "203.0.113.1:1234"},
+		{"http://10.10.8.127:8080", "invalid"},
+	} {
+		r := httptest.NewRequest("GET", test.origin+"/setup/", nil)
+		r.RemoteAddr = test.peer
+		if _, ok := policy.BootstrapOrigin(r); ok {
+			t.Errorf("untrusted bootstrap accepted: %s from %s", test.origin, test.peer)
+		}
+	}
+	settings := policy.Settings()
+	resolved, err := FromSettings(settings)
+	if err != nil || !resolved.LocalHTTPEnabled() || !resolved.LANHTTPEnabled() {
+		t.Fatal("saved default policy did not round trip", err)
+	}
+	settings.LANHTTPCIDRs[0] = "0.0.0.0/0"
+	if _, err := FromSettings(settings); err == nil {
+		t.Fatal("malformed saved policy accepted")
+	}
+	if _, err := policy.ValidateURL("http://10.10.8.127:8080"); err != nil {
+		t.Fatal("returned settings mutated the policy")
+	}
+	manual, _ := New(true, []string{"10.10.8.0/24"})
+	if manual.LocalHTTPEnabled() {
+		t.Fatal("managed policy changed the manual API")
+	}
+	if _, err := manual.ValidateURL("http://localhost:8080"); err == nil {
+		t.Fatal("manual policy silently enabled localhost HTTP")
+	}
+	localOnly, err := FromSettings(Settings{AllowLocalHTTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "http://localhost:8080/setup/", nil)
+	r.RemoteAddr = "127.0.0.1:1234"
+	if _, ok := localOnly.BootstrapOrigin(r); !ok {
+		t.Fatal("explicit local-only policy denied loopback")
+	}
+	r.RemoteAddr = "10.10.8.20:1234"
+	if _, ok := localOnly.BootstrapOrigin(r); ok {
+		t.Fatal("local-only policy enabled LAN peers")
+	}
+}

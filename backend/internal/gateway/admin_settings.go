@@ -22,7 +22,7 @@ func (s *Server) adminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.config.ReadSettings == nil || s.config.ApplySettings == nil {
-		writeData(w, map[string]any{"configured": false, "editable": false, "lan_http_enabled": s.config.WebPolicy.LANHTTPEnabled(), "settings": nil, "message": "Gateway ยังใช้ environment เดิม ย้ายเข้าการตั้งค่าถาวรตาม WEB_SETUP ก่อน โดยรักษา key และฐานข้อมูลเดิม"})
+		writeData(w, map[string]any{"configured": false, "editable": false, "lan_http_enabled": s.config.WebPolicy.LANHTTPEnabled(), "local_http_enabled": s.config.WebPolicy.LocalHTTPEnabled(), "settings": nil, "message": "Gateway ยังใช้ environment เดิม ย้ายเข้าการตั้งค่าถาวรตาม WEB_SETUP ก่อน โดยรักษา key และฐานข้อมูลเดิม"})
 		return
 	}
 	settings, err := s.config.ReadSettings()
@@ -34,7 +34,7 @@ func (s *Server) adminSettings(w http.ResponseWriter, r *http.Request) {
 	if s.config.WebPolicy.IsLANHTTPURL(s.config.PublicURL) {
 		message = "ใช้ HTTP เฉพาะ LAN ที่อนุญาต ข้อมูลระหว่างทางไม่เข้ารหัส ต้องเข้าสู่ระบบใหม่หลังบันทึก"
 	}
-	writeData(w, map[string]any{"configured": true, "editable": true, "lan_http_enabled": s.config.WebPolicy.LANHTTPEnabled(), "settings": settings, "message": message})
+	writeData(w, map[string]any{"configured": true, "editable": true, "lan_http_enabled": s.config.WebPolicy.LANHTTPEnabled(), "local_http_enabled": s.config.WebPolicy.LocalHTTPEnabled(), "settings": settings, "message": message})
 }
 func normalizedNetworks(values []string) map[string]bool {
 	set := map[string]bool{}

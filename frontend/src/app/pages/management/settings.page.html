@@ -20,10 +20,10 @@
 <p class="loading" role="status">กำลังโหลดการตั้งค่า…</p>
 } @if (data(); as state) {
 <p class="notice">{{ state.message }}</p>
-@if (lanHTTPEnabled()) {
+@if (httpEnabled()) {
 <p class="notice notice-warning" role="status">
-  อนุญาต HTTP สำหรับ LAN เมื่อใช้ HTTP ข้อมูลเข้าสู่ระบบจะไม่เข้ารหัสระหว่างทาง
-  ใช้ได้เฉพาะ IP และเครือข่ายที่ผู้ดูแลอนุญาต
+  อนุญาต HTTP ตามนโยบายที่บันทึกไว้ เมื่อใช้ HTTP ข้อมูลเข้าสู่ระบบจะไม่เข้ารหัสระหว่างทาง
+  ใช้ได้เฉพาะที่อยู่และเครือข่ายที่ระบบอนุญาต
 </p>
 }
 <section class="panel stack" aria-labelledby="runtime-settings-heading">
@@ -91,12 +91,12 @@
           name="publicUrl"
           [(ngModel)]="draft.public_url"
           [disabled]="busy()"
-          [placeholder]="lanHTTPEnabled() ? 'http://10.10.8.127:8080' : 'https://gateway.example.org'"
+          [placeholder]="lanHTTPEnabled() ? 'http://10.10.8.127:8080' : localHTTPEnabled() ? 'http://localhost:8080' : 'https://gateway.example.org'"
           maxlength="2048"
           required
           autocomplete="url"
         /><span class="help"
-          >{{ lanHTTPEnabled() ? 'ใช้ HTTPS หรือ HTTP ด้วย IP ภายในที่อนุญาต ระบุเฉพาะที่อยู่และพอร์ต ไม่ใส่ /setup/ หรือ /admin/' : 'ที่อยู่ HTTPS สำหรับเข้า Gateway ไม่ใส่ /setup/ หรือ /admin/' }}</span
+          >{{ publicURLHelp() }}</span
         ></label
       >
       <label class="field field-wide"
@@ -125,8 +125,8 @@
           >ระบุ CIDR ที่จำเป็น หนึ่งรายการต่อบรรทัด</span
         ></label
       >
-      <label class="field field-wide"
-        >เครือข่าย Reverse proxy ที่เชื่อถือ<textarea
+      <label class="field field-wide" [hidden]="!isHTTPSDraft()"
+        >Reverse proxy สำหรับ HTTPS (ขั้นสูง)<textarea
           name="proxyCidrs"
           [(ngModel)]="draft.trusted_proxy_cidrs"
           [disabled]="busy()"

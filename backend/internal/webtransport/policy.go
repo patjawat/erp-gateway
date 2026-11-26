@@ -14,8 +14,16 @@ import (
 
 // Policy's zero value permits HTTPS URLs only.
 type Policy struct {
-	lanHTTP bool
-	peers   []netip.Prefix
+	lanHTTP   bool
+	localHTTP bool
+	peers     []netip.Prefix
+}
+
+// Settings is the durable, validated management policy. It contains no secrets.
+type Settings struct {
+	AllowLANHTTP   bool     `json:"allow_lan_http"`
+	LANHTTPCIDRs   []string `json:"lan_http_cidrs"`
+	AllowLocalHTTP bool     `json:"allow_local_http"`
 }
 
 var privateNetworks = []netip.Prefix{
@@ -58,6 +66,33 @@ func privatePrefix(prefix netip.Prefix) bool {
 
 func (p Policy) LANHTTPEnabled() bool { return p.lanHTTP }
 
+func (p Policy) LocalHTTPEnabled() bool { return p.localHTTP }
+
+// DefaultSetupPolicy supports direct private/VPN and local browsers. New remains
+// the strict/manual API; only explicitly selected managed Setup uses this policy.
+func DefaultSetupPolicy() Policy {
+	policy := Policy{lanHTTP: true, localHTTP: true}
+	policy.peers = append([]netip.Prefix(nil), privateNetworks...)
+	return policy
+}
+
+func FromSettings(settings Settings) (Policy, error) {
+	policy, err := New(settings.AllowLANHTTP, settings.LANHTTPCIDRs)
+	if err != nil {
+		return Policy{}, err
+	}
+	policy.localHTTP = settings.AllowLocalHTTP
+	return policy, nil
+}
+
+func (p Policy) Settings() Settings {
+	settings := Settings{AllowLANHTTP: p.lanHTTP, AllowLocalHTTP: p.localHTTP}
+	for _, network := range p.peers {
+		settings.LANHTTPCIDRs = append(settings.LANHTTPCIDRs, network.String())
+	}
+	return settings
+}
+
 // ValidateURL accepts HTTP only for an explicitly enabled literal private IP.
 func (p Policy) ValidateURL(value string) (*url.URL, error) {
 	u, err := url.Parse(value)
@@ -73,19 +108,28 @@ func (p Policy) ValidateURL(value string) (*url.URL, error) {
 	if u.Scheme == "https" {
 		return u, nil
 	}
-	if u.Scheme == "http" && p.lanHTTP {
+	if u.Scheme == "http" && (p.lanHTTP || p.localHTTP) {
 		ip, err := netip.ParseAddr(u.Hostname())
-		if err == nil && ip.Zone() == "" && !ip.Is4In6() && ip.IsPrivate() {
+		localName := p.localHTTP && strings.EqualFold(u.Hostname(), "localhost")
+		validIP := err == nil && ip.Zone() == "" && !ip.Is4In6() && ((p.lanHTTP && ip.IsPrivate()) || (p.localHTTP && ip.IsLoopback()))
+		if validIP || localName {
 			// Browsers normalize literal IPv6 addresses and omit the default
 			// HTTP port. Compare request Host/Origin with that same authority.
-			host := ip.String()
-			if ip.Is6() {
+			host := "localhost"
+			if validIP {
+				host = ip.String()
+			}
+			if validIP && ip.Is6() {
 				host = "[" + host + "]"
 			}
 			if port := u.Port(); port != "" {
 				number, _ := strconv.Atoi(port) // Validated above.
 				if number != 80 {
-					host = net.JoinHostPort(ip.String(), strconv.Itoa(number))
+					if localName {
+						host = net.JoinHostPort("localhost", strconv.Itoa(number))
+					} else {
+						host = net.JoinHostPort(ip.String(), strconv.Itoa(number))
+					}
 				}
 			}
 			u.Host = host
@@ -122,8 +166,11 @@ func (p Policy) AllowsLANRequest(r *http.Request, gatewayURL string) bool {
 		return false
 	}
 	peer = peer.Unmap()
+	if p.localHTTP && peer.IsLoopback() {
+		return true
+	}
 	for _, network := range p.peers {
-		if network.Contains(peer) {
+		if p.lanHTTP && network.Contains(peer) {
 			return true
 		}
 	}
@@ -137,4 +184,17 @@ func (p Policy) AllowsLANOrigin(r *http.Request, gatewayURL string) bool {
 	}
 	u, _ := p.ValidateURL(gatewayURL)
 	return r.Header.Get("Origin") == "http://"+u.Host
+}
+
+// BootstrapOrigin proposes an origin from a direct request only. The caller must
+// still authenticate the one-time code before trusting or persisting this URL.
+func (p Policy) BootstrapOrigin(r *http.Request) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	u, err := p.ValidateURL("http://" + r.Host)
+	if err != nil || !p.AllowsLANRequest(r, u.String()) {
+		return "", false
+	}
+	return "http://" + u.Host, true
 }

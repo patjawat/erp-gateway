@@ -35,6 +35,17 @@ function privateIPLiteral(host: string): boolean {
   );
 }
 
+function localHTTPHost(host: string, normalizedHost: string): boolean {
+  if (host.toLowerCase() === "localhost") return true;
+  if (host.startsWith("[")) return normalizedHost === "[::1]";
+  const parts = host.split(".");
+  return (
+    parts.length === 4 &&
+    parts[0] === "127" &&
+    parts.every((part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)
+  );
+}
+
 @Component({
   selector: "gw-settings-page",
   standalone: true,
@@ -160,6 +171,31 @@ export class SettingsPage implements OnInit, OnDestroy {
     return this.data()?.lan_http_enabled === true;
   }
 
+  localHTTPEnabled(): boolean {
+    return this.data()?.local_http_enabled === true;
+  }
+
+  httpEnabled(): boolean {
+    return this.lanHTTPEnabled() || this.localHTTPEnabled();
+  }
+
+  isHTTPSDraft(): boolean {
+    try {
+      return new URL(this.draft.public_url.trim()).protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  publicURLHelp(): string {
+    const scope = this.lanHTTPEnabled()
+      ? this.localHTTPEnabled() ? "IP ภายในหรือ localhost" : "IP ภายในที่อนุญาต"
+      : "localhost หรือ loopback";
+    return this.httpEnabled()
+      ? `ใช้ HTTPS หรือ HTTP ด้วย ${scope} ระบุเฉพาะที่อยู่และพอร์ต ไม่ใส่ /setup/ หรือ /admin/`
+      : "ที่อยู่ HTTPS สำหรับเข้า Gateway ไม่ใส่ /setup/ หรือ /admin/";
+  }
+
   open(kind: "settings" | "recovery"): void {
     const data = this.data();
     if (!data?.editable || !data.settings) return;
@@ -237,10 +273,10 @@ export class SettingsPage implements OnInit, OnDestroy {
         /^https?:\/\/(\[[^\]]+\]|[^:/?#]+)(?::\d+)?\/?$/i,
       )?.[1];
       const allowedHTTP =
-        this.lanHTTPEnabled() &&
         url.protocol === "http:" &&
         !!authority &&
-        privateIPLiteral(authority);
+        ((this.lanHTTPEnabled() && privateIPLiteral(authority)) ||
+          (this.localHTTPEnabled() && localHTTPHost(authority, url.hostname)));
       if (
         (url.protocol !== "https:" && !allowedHTTP) ||
         !authority ||
@@ -256,8 +292,8 @@ export class SettingsPage implements OnInit, OnDestroy {
         throw new Error();
     } catch {
       this.modalError.set(
-        this.lanHTTPEnabled()
-          ? "ระบุ HTTPS หรือ HTTP ด้วย IP ภายใน เช่น http://10.10.8.127:8080 โดยไม่มี path ข้อมูลเข้าสู่ระบบ query หรือ fragment"
+        this.httpEnabled()
+          ? this.publicURLHelp() + " และไม่มีข้อมูลเข้าสู่ระบบ query หรือ fragment"
           : "ระบุที่อยู่ Gateway แบบ HTTPS โดยไม่มี path ข้อมูลเข้าสู่ระบบ query หรือ fragment",
       );
       return;

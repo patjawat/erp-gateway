@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  const ui = {authenticated:false,screen:"overview",epoch:0,dashboard:null,selected:new Set(),updateConfigured:false,setupCSRF:"",setupStep:0,setupValid:false,setupLANHTTPEnabled:false,setupURLTouched:false,settingsLANHTTPEnabled:false,settingsBase:null,settingsEditable:false,settingsDirty:false,settingsDraft:null,settingsSaving:false,recoveryBusy:false,recoveryController:null};
+  const ui = {authenticated:false,screen:"overview",epoch:0,dashboard:null,selected:new Set(),updateConfigured:false,setupCSRF:"",setupStep:0,setupValid:false,setupEnabled:true,setupLANHTTPEnabled:false,setupLocalHTTPEnabled:false,setupURLTouched:false,settingsLANHTTPEnabled:false,settingsLocalHTTPEnabled:false,settingsBase:null,settingsEditable:false,settingsDirty:false,settingsDraft:null,settingsSaving:false,recoveryBusy:false,recoveryController:null};
   const pages = new Map();
   const number = value => value === null || value === undefined ? "ยังไม่มีข้อมูล" : new Intl.NumberFormat("th-TH").format(value);
   const paths = {home:"M3 10 12 3l9 7v11h-6v-7H9v7H3Z",building:"M5 21V3h14v18M9 7h1m4 0h1M9 11h1m4 0h1M9 15h1m4 0h1M10 21v-3h4v3",download:"M12 3v12m-5-5 5 5 5-5M4 15v6h16v-6",shield:"M12 3 3 6v6c0 5 9 9 9 9s9-4 9-9V6Zm-4 9 3 3 5-6",settings:"M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z",arrow:"M4 12h15m-6-6 6 6-6 6",clock:"M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18m0 4v5l3 2",sun:"M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5",check:"m5 12 4 4L19 6",users:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.9M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8m7 .1a4 4 0 0 1 0 7.8",activity:"M2 12h4l3-8 6 16 3-8h4"};
@@ -149,22 +149,36 @@
     const parts=host.split(".");if(parts.length!==4||parts.some(part=>!/^(0|[1-9]\d{0,2})$/.test(part)||Number(part)>255))return false;
     const [first,second]=parts.map(Number);return first===10||(first===172&&second>=16&&second<=31)||(first===192&&second===168);
   }
-  function gatewayURLValid(value,allowLANHTTP) {
+  function localHTTPHost(host,normalizedHost) {
+    if(host.toLowerCase()==="localhost")return true;
+    if(host.startsWith("["))return normalizedHost==="[::1]";
+    const parts=host.split(".");return parts.length===4&&parts[0]==="127"&&parts.every(part=>/^(0|[1-9]\d{0,2})$/.test(part)&&Number(part)<=255);
+  }
+  function gatewayURLValid(value,allowLANHTTP,allowLocalHTTP=false) {
     try {
       const url=new URL(value),host=value.match(/^https?:\/\/(\[[^\]]+\]|[^:/?#]+)(?::\d+)?\/?$/i)?.[1];
-      return Boolean(host)&&(url.protocol==="https:"||(allowLANHTTP&&url.protocol==="http:"&&privateIPLiteral(host)))&&Boolean(url.hostname)&&!url.username&&!url.password&&url.pathname==="/"&&!url.search&&!url.hash&&url.port!=="0"&&!/[\\\r\n]/.test(value);
+      return Boolean(host)&&(url.protocol==="https:"||(url.protocol==="http:"&&((allowLANHTTP&&privateIPLiteral(host))||(allowLocalHTTP&&localHTTPHost(host,url.hostname)))))&&Boolean(url.hostname)&&!url.username&&!url.password&&url.pathname==="/"&&!url.search&&!url.hash&&url.port!=="0"&&!/[\\\r\n]/.test(value);
     }catch(_){return false;}
   }
-  function gatewayURLMessage(allowLANHTTP) {
-    return allowLANHTTP?"ระบุ HTTPS หรือ HTTP ด้วย IP ภายใน เช่น http://10.10.8.127:8080 โดยไม่มี path ข้อมูลเข้าสู่ระบบ query หรือ fragment":"ระบุที่อยู่ Gateway แบบ HTTPS โดยไม่มี path ข้อมูลเข้าสู่ระบบ query หรือ fragment";
+  function gatewayURLMessage(allowLANHTTP,allowLocalHTTP=false) {
+    const scope=allowLANHTTP?(allowLocalHTTP?"IP ภายในหรือ localhost":"IP ภายใน"):"localhost หรือ loopback";
+    return allowLANHTTP||allowLocalHTTP?"ระบุ HTTPS หรือ HTTP ด้วย "+scope+" โดยไม่มี path ข้อมูลเข้าสู่ระบบ query หรือ fragment":"ระบุที่อยู่ Gateway แบบ HTTPS โดยไม่มี path ข้อมูลเข้าสู่ระบบ query หรือ fragment";
   }
-  function transportFields(prefix,enabled) {
+  function advancedProxyFields(prefix) {
+    let https=false;try{https=new URL(byId(prefix+"-public-url").value.trim()).protocol==="https:";}catch(_){}
+    byId(prefix+"-proxy-settings").hidden=!https;
+  }
+  function transportFields(prefix,allowLANHTTP,allowLocalHTTP=false) {
+    const enabled=allowLANHTTP||allowLocalHTTP;
+    const scope=allowLANHTTP?(allowLocalHTTP?"IP ภายในหรือ localhost":"IP ภายในที่อนุญาต"):"localhost หรือ loopback";
     document.querySelector('label[for="'+prefix+'-public-url"]').textContent=enabled?"ที่อยู่ Gateway":"ที่อยู่ HTTPS ของ Gateway";
-    byId(prefix+"-public-url").placeholder=enabled?"http://10.10.8.127:8080":"https://gateway.example.org";
-    byId(prefix+"-transport-help").textContent=enabled?"อนุญาต HTTP เฉพาะ IP และเครือข่าย LAN ที่กำหนด เมื่อใช้ HTTP ข้อมูลเข้าสู่ระบบจะไม่เข้ารหัสระหว่างทาง":"ใช้ HTTPS ผ่าน reverse proxy ที่คุณดูแล โดยไม่ใส่ /setup/ หรือ /admin/";
+    byId(prefix+"-public-url").placeholder=allowLANHTTP?"http://10.10.8.127:8080":allowLocalHTTP?"http://localhost:8080":"https://gateway.example.org";
+    byId(prefix+"-transport-help").textContent=enabled?(prefix==="setup"?"ยืนยันที่อยู่ที่ใช้เปิดหน้านี้สำหรับเข้า Gateway เมื่อใช้ HTTP ข้อมูลเข้าสู่ระบบจะไม่เข้ารหัสระหว่างทาง":"ใช้ HTTP ได้ด้วย "+scope+" ตามนโยบายที่บันทึกไว้ เมื่อใช้ HTTP ข้อมูลเข้าสู่ระบบจะไม่เข้ารหัสระหว่างทาง"):"ใช้ HTTPS ผ่าน reverse proxy ที่คุณดูแล โดยไม่ใส่ /setup/ หรือ /admin/";
+    advancedProxyFields(prefix);
   }
   function fillSettingsForm(value){
     for(const [key,id] of Object.entries(settingsFields))byId(id).value=key==="public_url"?(value?.[key]||""):(value?.[key]||[]).join("\n");
+    advancedProxyFields("settings");
     ui.settingsDirty=false;ui.settingsDraft=null;byId("settings-review").hidden=true;setError("settings-error","");
   }
   function settingsPayload(){
@@ -176,9 +190,9 @@
     const results=await Promise.allSettled([api("dashboard"),api("settings")]);
     if(epoch!==ui.epoch||request!==settingsRequest)return;
     byId("settings-refresh").disabled=false;if(ui.screen!=="settings")return;
-    if(results[0].status==="fulfilled"){const data=results[0].value;const lanHTTP=results[1].status==="fulfilled"&&results[1].value.lan_http_enabled===true&&results[1].value.settings?.public_url?.startsWith("http:");byId("settings-summary").replaceChildren(summary([["การตั้งค่าระบบ",data.setup?.configured?"ตั้งค่าแล้ว":"ยังไม่พร้อม"],["การเข้า Gateway",lanHTTP?"HTTP เฉพาะ LAN ไม่เข้ารหัส":"HTTPS ผ่าน Reverse proxy"],["หน่วยงานเปิดใช้งาน",number(data.hospitals?.enabled)+" แห่ง"],["ใบรับรอง Gateway",data.certificates?.gateway?.subject||"ยังไม่มีข้อมูล"],["บริการออกใบรับรอง",data.certificates?.issuer_status==="not_configured"?"ยังไม่ได้ตั้งค่า ใช้ CSR และนำเข้าใบที่ลงนามแล้ว":data.certificates?.issuer_status],["ข้อมูลล่าสุด",when(data.as_of)]]));}
+    if(results[0].status==="fulfilled"){const data=results[0].value;const settings=results[1].status==="fulfilled"?results[1].value:null;const localHTTP=settings?.local_http_enabled===true&&settings?.settings?.public_url?.startsWith("http:");const lanHTTP=settings?.lan_http_enabled===true&&settings?.settings?.public_url?.startsWith("http:");byId("settings-summary").replaceChildren(summary([["การตั้งค่าระบบ",data.setup?.configured?"ตั้งค่าแล้ว":"ยังไม่พร้อม"],["การเข้า Gateway",lanHTTP?"HTTP ภายใน LAN ไม่เข้ารหัส":localHTTP?"HTTP บนเครื่องนี้ ไม่เข้ารหัส":"HTTPS ผ่าน Reverse proxy"],["หน่วยงานเปิดใช้งาน",number(data.hospitals?.enabled)+" แห่ง"],["ใบรับรอง Gateway",data.certificates?.gateway?.subject||"ยังไม่มีข้อมูล"],["บริการออกใบรับรอง",data.certificates?.issuer_status==="not_configured"?"ยังไม่ได้ตั้งค่า ใช้ CSR และนำเข้าใบที่ลงนามแล้ว":data.certificates?.issuer_status],["ข้อมูลล่าสุด",when(data.as_of)]]));}
     if(results[1].status==="fulfilled"){
-      const data=results[1].value;ui.settingsLANHTTPEnabled=data.lan_http_enabled===true;transportFields("settings",ui.settingsLANHTTPEnabled);ui.settingsEditable=Boolean(data.editable&&data.settings);ui.settingsBase=data.settings||null;
+      const data=results[1].value;ui.settingsLANHTTPEnabled=data.lan_http_enabled===true;ui.settingsLocalHTTPEnabled=data.local_http_enabled===true;transportFields("settings",ui.settingsLANHTTPEnabled,ui.settingsLocalHTTPEnabled);ui.settingsEditable=Boolean(data.editable&&data.settings);ui.settingsBase=data.settings||null;
       byId("settings-form").hidden=!ui.settingsEditable;byId("recovery-export-form").hidden=!ui.settingsEditable;byId("recovery-unavailable").hidden=ui.settingsEditable;
       const message=byId("settings-edit-message");message.textContent=data.message||(ui.settingsEditable?"แก้ไขร่างและตรวจรายการเปลี่ยนแปลงก่อนยืนยันใช้การตั้งค่าใหม่":"Gateway นี้ยังใช้ environment ให้ย้ายเข้าการตั้งค่าถาวรตามคู่มือ WEB_SETUP โดยรักษา key และข้อมูลเดิมก่อนแก้ไขผ่านเว็บ");message.className="notice"+(ui.settingsEditable?"":" warning");
       if(!ui.settingsDirty||!ui.settingsEditable)fillSettingsForm(ui.settingsBase);
@@ -188,10 +202,11 @@
   }
   byId("settings-refresh").addEventListener("click",loadSettings);
   byId("settings-form").addEventListener("input",()=>{ui.settingsDirty=true;ui.settingsDraft=null;byId("settings-review").hidden=true;setError("settings-error","");});
+  byId("settings-public-url").addEventListener("input",()=>advancedProxyFields("settings"));
   byId("settings-reset").addEventListener("click",()=>fillSettingsForm(ui.settingsBase));
   byId("settings-form").addEventListener("submit",event=>{
     event.preventDefault();if(!ui.settingsEditable||ui.settingsSaving||!event.currentTarget.reportValidity())return;setError("settings-error","");
-    const draft=settingsPayload();if(!gatewayURLValid(draft.public_url,ui.settingsLANHTTPEnabled)){setError("settings-error",gatewayURLMessage(ui.settingsLANHTTPEnabled));return;}const changes=Object.keys(settingsFields).filter(key=>JSON.stringify(draft[key])!==JSON.stringify(ui.settingsBase?.[key]??(key==="public_url"?"":[])));
+    const draft=settingsPayload();if(!gatewayURLValid(draft.public_url,ui.settingsLANHTTPEnabled,ui.settingsLocalHTTPEnabled)){setError("settings-error",gatewayURLMessage(ui.settingsLANHTTPEnabled,ui.settingsLocalHTTPEnabled));return;}const changes=Object.keys(settingsFields).filter(key=>JSON.stringify(draft[key])!==JSON.stringify(ui.settingsBase?.[key]??(key==="public_url"?"":[])));
     ui.settingsDraft=changes.length?draft:null;const rows=changes.map(key=>{const row=node("div","settings-change");row.append(node("h4","",settingsLabels[key]));const values=node("div","settings-change-values");for(const [label,value] of [["ค่าที่บันทึก",ui.settingsBase?.[key]],["ค่าที่จะใช้",draft[key]]]){const dl=node("dl"),text=Array.isArray(value)?value.join("\n"):value;dl.append(node("dt","",label),node("dd","",text||"ไม่ระบุ"));values.append(dl);}row.append(values);return row;});
     byId("settings-diff").replaceChildren(...rows);if(!changes.length)byId("settings-diff").append(node("p","muted","ไม่มีค่าที่เปลี่ยนจากการตั้งค่าปัจจุบัน"));byId("settings-apply").disabled=!changes.length;byId("settings-review").hidden=false;byId("settings-review-heading").tabIndex=-1;byId("settings-review-heading").focus();
   });
@@ -317,26 +332,35 @@
   async function setupAPI(path,body) {
     const response=await fetch("/setup/api/"+path,{method:body===undefined?"GET":"POST",credentials:"same-origin",cache:"no-store",redirect:"error",headers:{Accept:"application/json",...(body===undefined?{}:{"Content-Type":"application/json","X-CSRF-Token":ui.setupCSRF})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(30000)});
     let result;try{result=await response.json();}catch(_){throw new Error("ข้อมูลตอบกลับไม่ถูกต้อง กรุณาโหลดหน้าใหม่");}
-    if(!response.ok){if(response.status===401 && path!=="session"){byId("setup-workspace").hidden=true;byId("setup-unlock").hidden=false;ui.setupCSRF="";}throw new Error(result.error?.message||"ตั้งค่าไม่สำเร็จ กรุณาตรวจข้อมูลแล้วลองใหม่");}
+    if(!response.ok){if(result.error?.code==="SETUP_DISABLED")disableSetup();else if(response.status===401 && path!=="session"){byId("setup-workspace").hidden=true;byId("setup-unlock").hidden=false;ui.setupCSRF="";}throw new Error(result.error?.message||"ตั้งค่าไม่สำเร็จ กรุณาตรวจข้อมูลแล้วลองใหม่");}
     return result.data;
+  }
+  function disableSetup(){ui.setupEnabled=false;ui.setupValid=false;ui.setupCSRF="";byId("setup-code").value="";byId("setup-activate").disabled=true;byId("setup-unlock").hidden=true;byId("setup-workspace").hidden=true;byId("setup-reason").hidden=true;byId("system-status").textContent="ปิดโหมดตั้งค่า";}
+  function consumeSessionMetadata(data){
+    if(data.setup_enabled===false){disableSetup();notice("ปิดโหมดตั้งค่า เปิด SETUP=true บนเครื่อง Gateway เพื่อเริ่มตั้งค่า","error");return false;}
+    ui.setupEnabled=true;ui.setupLANHTTPEnabled=data.lan_http_enabled===true;ui.setupLocalHTTPEnabled=data.local_http_enabled===true;
+    transportFields("setup",ui.setupLANHTTPEnabled,ui.setupLocalHTTPEnabled);
+    byId("setup-introduction").textContent=ui.setupLANHTTPEnabled||ui.setupLocalHTTPEnabled?"ตรวจยืนยันที่อยู่ที่เปิดใช้งาน ตั้งบัญชีผู้ดูแล และเตรียมใบรับรองเชื่อมต่อหน่วยงาน":"ใช้ HTTPS เดิม และจัดเตรียมใบรับรองสำหรับเชื่อมต่อหน่วยงาน";
+    if(!ui.setupURLTouched&&!byId("setup-public-url").value&&typeof data.public_url==="string")byId("setup-public-url").value=data.public_url;
+    advancedProxyFields("setup");return true;
   }
   function setupPayload(){const list=id=>byId(id).value.split(/[\n,]+/).map(v=>v.trim()).filter(Boolean);return {admin_username:byId("setup-username").value.trim(),admin_password:byId("setup-password").value,public_url:byId("setup-public-url").value.trim(),trusted_proxy_cidrs:list("setup-proxies"),approved_upstreams:list("setup-upstreams"),private_upstream_cidrs:list("setup-private-cidrs"),client_certificate_pem:byId("setup-cert").value,client_private_key_pem:byId("setup-key").value,hospital_ca_pem:byId("setup-ca").value,...(byId("setup-encryption-key").value?{encryption_key:byId("setup-encryption-key").value}:{})};}
   function setupStep(step){ui.setupStep=step;document.querySelectorAll("[data-setup-panel]").forEach(el=>el.hidden=Number(el.dataset.setupPanel)!==step);document.querySelectorAll("[data-setup-step]").forEach(el=>{el.classList.toggle("active",Number(el.dataset.setupStep)===step);el.setAttribute("aria-current",Number(el.dataset.setupStep)===step?"step":"false");});byId("setup-back").hidden=step===0;byId("setup-next").hidden=step===3;byId("setup-activate").hidden=step!==3;setError("setup-error","");}
-  function checkCurrentStep(){if(ui.setupStep===1&&!gatewayURLValid(byId("setup-public-url").value.trim(),ui.setupLANHTTPEnabled)){setError("setup-error",gatewayURLMessage(ui.setupLANHTTPEnabled));return false;}for(const field of document.querySelectorAll('[data-setup-panel="'+ui.setupStep+'"] input:not([data-ca-guide-control]),[data-setup-panel="'+ui.setupStep+'"] textarea')){if(!field.reportValidity())return false;}return true;}
+  function checkCurrentStep(){if(ui.setupStep===1&&!gatewayURLValid(byId("setup-public-url").value.trim(),ui.setupLANHTTPEnabled,ui.setupLocalHTTPEnabled)){setError("setup-error",gatewayURLMessage(ui.setupLANHTTPEnabled,ui.setupLocalHTTPEnabled));return false;}for(const field of document.querySelectorAll('[data-setup-panel="'+ui.setupStep+'"] input:not([data-ca-guide-control]),[data-setup-panel="'+ui.setupStep+'"] textarea')){if(!field.reportValidity())return false;}return true;}
   byId("setup-next").addEventListener("click",()=>{if(checkCurrentStep())setupStep(Math.min(3,ui.setupStep+1));});
   byId("setup-back").addEventListener("click",()=>setupStep(Math.max(0,ui.setupStep-1)));
   document.querySelectorAll("[data-setup-step]").forEach(button=>button.addEventListener("click",()=>{const step=Number(button.dataset.setupStep);if(step<ui.setupStep || checkCurrentStep())setupStep(step);}));
   byId("setup-form").addEventListener("input",event=>{if(event.target.closest?.("[data-ca-guide-control]"))return;ui.setupValid=false;byId("setup-activate").disabled=true;});
-  byId("setup-public-url").addEventListener("input",()=>{ui.setupURLTouched=true;});
-  byId("setup-code-form").addEventListener("submit",async event=>{event.preventDefault();const button=byId("setup-unlock-submit");button.disabled=true;notice("");try{const data=await setupAPI("session",{code:byId("setup-code").value.trim()});ui.setupCSRF=data.csrf_token;byId("setup-code").value="";byId("setup-unlock").hidden=true;byId("setup-workspace").hidden=false;setupStep(0);}catch(error){notice(error.message,"error");}finally{button.disabled=false;}});
+  byId("setup-public-url").addEventListener("input",()=>{ui.setupURLTouched=true;advancedProxyFields("setup");});
+  byId("setup-code-form").addEventListener("submit",async event=>{event.preventDefault();if(!ui.setupEnabled)return;const button=byId("setup-unlock-submit");button.disabled=true;notice("");try{const data=await setupAPI("session",{code:byId("setup-code").value.trim()});if(!consumeSessionMetadata(data))return;ui.setupCSRF=data.csrf_token;byId("setup-code").value="";byId("setup-unlock").hidden=true;byId("setup-workspace").hidden=false;setupStep(0);}catch(error){notice(error.message,"error");}finally{button.disabled=false;}});
   byId("setup-csr-copy").addEventListener("click",()=>copyText("setup-csr-pem"));
   byId("setup-csr-download").addEventListener("click",()=>downloadPublicCSR("setup-csr-pem"));
   byId("setup-csr-create").addEventListener("click",async()=>{const button=byId("setup-csr-create");button.disabled=true;setError("setup-error","");try{const result=await setupAPI("csr",{});byId("setup-csr-pem").value=result.csr_pem||"";byId("setup-csr-result").hidden=false;byId("setup-key").value="";ui.setupValid=false;byId("setup-activate").disabled=true;}catch(error){setError("setup-error",error);}finally{button.disabled=false;}});
-  byId("setup-validate").addEventListener("click",async()=>{if(!gatewayURLValid(byId("setup-public-url").value.trim(),ui.setupLANHTTPEnabled)){setError("setup-error",gatewayURLMessage(ui.setupLANHTTPEnabled));return;}const button=byId("setup-validate");button.disabled=true;setError("setup-error","");ui.setupValid=false;byId("setup-activate").disabled=true;try{const data=await setupAPI("validate",setupPayload());byId("setup-checks").replaceChildren(...(data.checks||[]).map(check=>{const li=node("li"),copy=node("div");li.dataset.check=check.status;const names={admin:"บัญชีผู้ดูแล",https:"การเข้าใช้งาน Gateway",mtls:"ใบรับรอง mTLS",hospital_connectivity:"การเชื่อมต่อโรงพยาบาล"};copy.append(node("strong","",names[check.name]||check.name),node("p","",check.message||check.status));li.append(icon(check.status==="ready"?"check":"clock"),copy);return li;}));ui.setupValid=Boolean(data.valid);byId("setup-activate").disabled=!ui.setupValid;byId("setup-validation-note").textContent=data.valid?"ข้อมูลผ่านการตรวจ พร้อมบันทึกและเปิดใช้งาน":"ข้อมูลยังไม่พร้อม กรุณาตรวจรายการด้านบน";}catch(error){setError("setup-error",error);}finally{button.disabled=false;}});
+  byId("setup-validate").addEventListener("click",async()=>{if(!gatewayURLValid(byId("setup-public-url").value.trim(),ui.setupLANHTTPEnabled,ui.setupLocalHTTPEnabled)){setError("setup-error",gatewayURLMessage(ui.setupLANHTTPEnabled,ui.setupLocalHTTPEnabled));return;}const button=byId("setup-validate");button.disabled=true;setError("setup-error","");ui.setupValid=false;byId("setup-activate").disabled=true;try{const data=await setupAPI("validate",setupPayload());byId("setup-checks").replaceChildren(...(data.checks||[]).map(check=>{const li=node("li"),copy=node("div");li.dataset.check=check.status;const names={admin:"บัญชีผู้ดูแล",https:"การเข้าใช้งาน Gateway",mtls:"ใบรับรอง mTLS",hospital_connectivity:"การเชื่อมต่อโรงพยาบาล"};copy.append(node("strong","",names[check.name]||check.name),node("p","",check.message||check.status));li.append(icon(check.status==="ready"?"check":"clock"),copy);return li;}));ui.setupValid=Boolean(data.valid);byId("setup-activate").disabled=!ui.setupValid;byId("setup-validation-note").textContent=data.valid?"ข้อมูลผ่านการตรวจ พร้อมบันทึกและเปิดใช้งาน":"ข้อมูลยังไม่พร้อม กรุณาตรวจรายการด้านบน";}catch(error){setError("setup-error",error);}finally{button.disabled=false;}});
   byId("setup-form").addEventListener("submit",async event=>{event.preventDefault();if(!ui.setupValid)return;const button=byId("setup-activate");button.disabled=true;setError("setup-error","");try{const result=await setupAPI("activate",setupPayload());byId("setup-form").reset();ui.setupCSRF="";ui.setupValid=false;location.assign(result.redirect==="/admin/"?result.redirect:"/admin/");}catch(error){setError("setup-error",error);button.disabled=false;}});
   async function startSetup(){
     byId("initial-loading").hidden=true;byId("setup-view").hidden=false;byId("login-view").hidden=true;byId("admin-view").hidden=true;byId("system-status").textContent="ตั้งค่าครั้งแรก";
-    try{const data=await setupAPI("status");if(data.state==="active"){location.replace("/admin/");return;}ui.setupLANHTTPEnabled=data.lan_http_enabled===true;transportFields("setup",ui.setupLANHTTPEnabled);if(ui.setupLANHTTPEnabled)byId("setup-introduction").textContent="ตั้งค่าการเข้าใช้งานผ่าน LAN และใบรับรองสำหรับเชื่อมต่อหน่วยงาน";if(!ui.setupURLTouched&&!byId("setup-public-url").value&&typeof data.public_url==="string")byId("setup-public-url").value=data.public_url;byId("setup-code-command").textContent=data.code_command||byId("setup-code-command").textContent;byId("setup-reason").hidden=!data.reason;byId("setup-reason").textContent=data.reason||"";byId("setup-recovery-field").hidden=!data.existing_data;byId("setup-encryption-key").required=Boolean(data.existing_data);if(data.authenticated){ui.setupCSRF=data.csrf_token;byId("setup-unlock").hidden=true;byId("setup-workspace").hidden=false;}setupStep(0);}
+    try{const data=await setupAPI("status");if(data.state==="active"){location.replace("/admin/");return;}if(data.setup_enabled===false){disableSetup();notice("ปิดโหมดตั้งค่า เปิด SETUP=true บนเครื่อง Gateway เพื่อเริ่มตั้งค่า","error");return;}byId("setup-code-command").textContent=data.code_command||byId("setup-code-command").textContent;byId("setup-reason").hidden=!data.reason;byId("setup-reason").textContent=data.reason||"";byId("setup-recovery-field").hidden=!data.existing_data;byId("setup-encryption-key").required=Boolean(data.existing_data);if(data.authenticated){if(!consumeSessionMetadata(data))return;ui.setupCSRF=data.csrf_token;byId("setup-unlock").hidden=true;byId("setup-workspace").hidden=false;}setupStep(0);}
     catch(error){notice(error.message,"error");}
   }
   window.addEventListener("pagehide",()=>{observer?.disconnect();attachmentObserver?.disconnect();for(const p of pages.values())p.controller?.abort();});

@@ -4,6 +4,7 @@
 .env.*
 !.env.example
 !.env.lan.example
+!.env.advanced.example
 *.db
 *.db-shm
 *.db-wal

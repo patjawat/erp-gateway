@@ -174,3 +174,47 @@ func TestAdminSettingsExposeLANHTTPCapability(t *testing.T) {
 		t.Fatal("missing read-only LAN capability", got.Code, got.Body.String())
 	}
 }
+
+func TestManagedLocalHTTPAdminLoginAndMetadata(t *testing.T) {
+	cfg := lanAdminConfig(t)
+	cfg.PublicURL = "http://localhost:8080"
+	cfg.WebPolicy = webtransport.DefaultSetupPolicy()
+	cfg.ReadSettings = func() (RuntimeSettings, error) { return RuntimeSettings{PublicURL: cfg.PublicURL}, nil }
+	cfg.ApplySettings = func(_ context.Context, _ RuntimeSettings) error { return nil }
+	app, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := app.Handler()
+	request := func(method, path, origin, peer string, cookie *http.Cookie) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, cfg.PublicURL+path, strings.NewReader(`{"username":"admin","password":"a-test-only-password-12345"}`))
+		req.RemoteAddr = peer
+		req.Header.Set("Content-Type", "application/json")
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		return w
+	}
+	for _, origin := range []string{"", "http://localhost:8081", "http://127.0.0.1:8080"} {
+		got := request("POST", "/admin/api/login", origin, "127.0.0.1:12345", nil)
+		if got.Code != http.StatusForbidden {
+			t.Fatal("local HTTP login accepted an incorrect Origin", origin, got.Code)
+		}
+	}
+	login := request("POST", "/admin/api/login", cfg.PublicURL, "127.0.0.1:12345", nil)
+	if login.Code != http.StatusOK || len(login.Result().Cookies()) != 1 || login.Result().Cookies()[0].Secure || !login.Result().Cookies()[0].HttpOnly {
+		t.Fatal("managed localhost HTTP login failed", login.Code, login.Body.String())
+	}
+	settings := request("GET", "/admin/api/settings", "", "127.0.0.1:12345", login.Result().Cookies()[0])
+	if settings.Code != http.StatusOK || !strings.Contains(settings.Body.String(), `"local_http_enabled":true`) || !strings.Contains(settings.Body.String(), `"lan_http_enabled":true`) {
+		t.Fatal("managed HTTP capabilities missing", settings.Code, settings.Body.String())
+	}
+	if got := request("GET", "/admin/api/session", "", "203.0.113.9:12345", login.Result().Cookies()[0]); got.Code != http.StatusForbidden {
+		t.Fatal("public peer accepted by managed local HTTP", got.Code)
+	}
+}

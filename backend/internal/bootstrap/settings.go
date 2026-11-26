@@ -103,13 +103,17 @@ func (m *Manager) ApplySettings(ctx context.Context, in PublicSettings) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := validatePublicSettingsWithPolicy(in, m.options.ValidatePolicy, m.options.WebPolicy); err != nil {
-		return err
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cfg, key, err := m.currentLocked()
 	if err != nil {
+		return err
+	}
+	policy, err := cfg.ManagementPolicy(m.options.WebPolicy)
+	if err != nil {
+		return err
+	}
+	if err := validatePublicSettingsWithPolicy(in, m.options.ValidatePolicy, policy); err != nil {
 		return err
 	}
 	unlock, err := lockDirectory(m.options.Directory)

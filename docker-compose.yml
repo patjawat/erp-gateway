@@ -19,11 +19,12 @@ services:
     cap_drop:
       - ALL
     ports:
-      - "${GATEWAY_BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-8080}:8080"
+      - "${GATEWAY_BIND_ADDRESS:-0.0.0.0}:${GATEWAY_PORT:-8080}:8080"
     environment:
       LISTEN_ADDR: ":8080"
       GATEWAY_DATABASE_PATH: /data/gateway.db
       GATEWAY_CONFIG_DIR: /config
+      SETUP: ${SETUP-true}
       GATEWAY_SETUP_PUBLIC_URL: ${GATEWAY_SETUP_PUBLIC_URL:-}
       GATEWAY_ALLOW_LAN_HTTP: ${GATEWAY_ALLOW_LAN_HTTP:-false}
       GATEWAY_LAN_HTTP_CIDRS: ${GATEWAY_LAN_HTTP_CIDRS:-}
