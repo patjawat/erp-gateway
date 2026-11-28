@@ -68,7 +68,7 @@ func TestVehicleMissionGatewayStagesAndReadsOnlyCanonicalReceipt(t *testing.T) {
 	for _, test := range []struct {
 		method, path, token string
 		code                int
-	}{{"GET", receipt.URL, "", 401}, {"POST", path + "?url=http://other.invalid", token, 400}, {"DELETE", receipt.URL, token, 405}, {"GET", path + "/..%2Fsecret", token, 404}} {
+	}{{"GET", receipt.URL, "", 401}, {"POST", path + "?url=http://other.invalid", token, 400}, {"DELETE", receipt.URL, token, 405}, {"GET", path + "/..%2Fsecret", token, 400}} {
 		if got := r.request(t, test.method, test.path, nil, test.token, false); got.Code != test.code {
 			t.Fatalf("invalid route %s: %d", test.path, got.Code)
 		}

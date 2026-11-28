@@ -34,6 +34,27 @@ type directoryBackendFlight struct {
 	err  error
 }
 
+type backendStatus struct {
+	HospitalCode string          `json:"hospital_code"`
+	APIVersion   string          `json:"api_version"`
+	ERPReachable bool            `json:"erp_reachable"`
+	Backend      json.RawMessage `json:"backend"`
+}
+
+func (status backendStatus) directoryPath(h Hospital) (string, error) {
+	if status.HospitalCode != h.Code || status.APIVersion != contracts.Version || !status.ERPReachable {
+		return "", errDirectoryBackend
+	}
+	if len(status.Backend) == 0 {
+		return goDirectoryPath, nil
+	}
+	var backend string
+	if json.Unmarshal(status.Backend, &backend) != nil || backend != "erp_api_module" {
+		return "", errDirectoryBackend
+	}
+	return erpDirectoryPath, nil
+}
+
 // The cache belongs to one immutable runtime generation. Its keys additionally
 // bind the hospital/configuration snapshot, so a key or destination change can
 // never reuse a previous backend decision. Neither tokens nor plaintext keys
@@ -50,6 +71,35 @@ func (c *directoryBackendCache) now() time.Time {
 		return c.clock()
 	}
 	return time.Now()
+}
+
+// A successful administrator connection test already authenticated this same
+// bounded status protocol. Reuse it for business routing without another probe.
+// The cache key still binds the exact destination/key/configuration generation.
+func (c *directoryBackendCache) remember(key, path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = make(map[string]directoryBackendEntry)
+		c.flights = make(map[string]*directoryBackendFlight)
+	}
+	now := c.now()
+	for key, entry := range c.entries {
+		if !now.Before(entry.expires) {
+			delete(c.entries, key)
+		}
+	}
+	if _, exists := c.entries[key]; !exists && len(c.entries) >= directoryBackendCacheLimit {
+		var oldest string
+		var earliest time.Time
+		for existing, entry := range c.entries {
+			if oldest == "" || entry.expires.Before(earliest) {
+				oldest, earliest = existing, entry.expires
+			}
+		}
+		delete(c.entries, oldest)
+	}
+	c.entries[key] = directoryBackendEntry{path: path, expires: now.Add(directoryBackendTTL)}
 }
 
 func (c *directoryBackendCache) resolve(ctx context.Context, key string, fetch func(context.Context) (string, error)) (string, error) {
@@ -137,23 +187,11 @@ func (s *Server) directoryUpstreamPath(ctx context.Context, h Hospital) (string,
 			resp.Body.Close()
 			return "", errDirectoryBackend
 		}
-		var status struct {
-			HospitalCode string          `json:"hospital_code"`
-			APIVersion   string          `json:"api_version"`
-			ERPReachable bool            `json:"erp_reachable"`
-			Backend      json.RawMessage `json:"backend"`
-		}
-		if readEnvelopeLimit(resp, &status, 8*1024) != nil || status.HospitalCode != h.Code || status.APIVersion != contracts.Version || !status.ERPReachable {
-			return "", errDirectoryBackend
-		}
-		if len(status.Backend) == 0 {
-			return goDirectoryPath, nil
-		}
-		var backend string
-		if json.Unmarshal(status.Backend, &backend) != nil || backend != "erp_api_module" {
+		var status backendStatus
+		if readEnvelopeLimit(resp, &status, 8*1024) != nil {
 			return "", errDirectoryBackend
 		}
 		// This is deliberately a fixed path, not a path/URL supplied by a site.
-		return erpDirectoryPath, nil
+		return status.directoryPath(h)
 	})
 }

@@ -105,21 +105,22 @@ func (s *Server) externalStatus(w http.ResponseWriter, r *http.Request) {
 		s.externalError(w, resp)
 		return
 	}
-	var result contracts.ExternalResult
-	if readEnvelope(resp, &result) != nil {
+	value, envelope, err := readTokenExchange(resp)
+	var status string
+	if err != nil || json.Unmarshal(envelope.data["status"], &status) != nil {
 		upstreamUnavailable(w)
 		return
 	}
-	if result.Status == "pending" {
+	if status == "pending" {
 		// Pending never relays a malformed upstream token or identity.
 		writeData(w, map[string]string{"status": "pending"})
 		return
 	}
-	if result.Status != "complete" {
+	if status != "complete" {
 		upstreamUnavailable(w)
 		return
 	}
-	token, err := s.config.Store.createSession(r.Context(), h, result.Token)
+	token, err := s.config.Store.createSession(r.Context(), h, value)
 	if errors.Is(err, errDisabled) {
 		disabled(w)
 		return
@@ -128,13 +129,13 @@ func (s *Server) externalStatus(w http.ResponseWriter, r *http.Request) {
 		upstreamUnavailable(w)
 		return
 	}
-	if max := time.Now().Add(24 * time.Hour).Unix(); result.ExpiresAt > max {
-		result.ExpiresAt = max
+	if max := time.Now().Add(24 * time.Hour).Unix(); value.ExpiresAt > max {
+		value.ExpiresAt = max
 	}
-	result.AccessToken = token
-	result.TokenType = "Bearer"
-	result.Scope = "mobile:read"
-	writeData(w, result)
+	value.AccessToken = token
+	value.TokenType = "Bearer"
+	value.Scope = "mobile:read"
+	envelope.write(w, value)
 }
 
 func (s *Server) externalCancel(w http.ResponseWriter, r *http.Request) {

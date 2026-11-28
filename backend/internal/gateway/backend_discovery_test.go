@@ -204,7 +204,13 @@ func TestDirectoryDiscoveryMixedBackendsPreservePublicContract(t *testing.T) {
 		if (code == "11447" && (f.goCalls != 2 || f.erpCalls != 0)) || (code == "12448" && (f.goCalls != 0 || f.erpCalls != 2)) {
 			t.Errorf("wrong backend: %+v", f.lastQuery)
 		}
-		if len(f.lastQuery) != 3 || f.lastQuery.Get("q") != "staff" || f.lastQuery.Get("page") != "2" || f.lastQuery.Get("exclude_emp_id") != "8" {
+		wantQueries := 3
+		if code == "12448" {
+			// ERP owns business query validation. Gateway passes future selectors
+			// unchanged; these values cannot choose an upstream or actor.
+			wantQueries = 6
+		}
+		if len(f.lastQuery) != wantQueries || f.lastQuery.Get("q") != "staff" || f.lastQuery.Get("page") != "2" || f.lastQuery.Get("exclude_emp_id") != "8" {
 			t.Errorf("query forwarding: %v", f.lastQuery)
 		}
 		f.mu.Unlock()

@@ -139,11 +139,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/external/status", s.externalStatus)
 	mux.HandleFunc("POST /api/auth/external/cancel", s.externalCancel)
 	mux.HandleFunc("POST /api/auth/logout", s.logout)
+	mux.HandleFunc("GET /api/auth/backend", s.backendControl)
 	mux.HandleFunc("/api/notifications", s.notificationHTTP)
 	mux.HandleFunc("GET /admin/api/notifications/summary", s.adminNotificationSummary)
 	mux.HandleFunc("/api/notifications/", s.notificationHTTP)
 	mux.HandleFunc("POST /api/notification-devices/register", s.notificationHTTP)
 	mux.HandleFunc("POST /api/notification-devices/remove", s.notificationHTTP)
+	mux.HandleFunc("GET /api/notification-devices/capabilities", s.notificationDeviceCapabilities)
 	mux.HandleFunc("GET /api/profile", s.profile)
 	mux.HandleFunc("POST /api/usage/activity", s.usageActivity)
 	mux.HandleFunc("GET /api/profile/avatar", s.avatar)
@@ -231,6 +233,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/api/", func(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "NOT_FOUND", "ไม่พบรายการที่ร้องขอ")
 	})
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		// Dynamic ERP business routes are intercepted before this compatibility
+		// mux. Unknown Go/local routes still require a valid mobile session.
+		if _, _, ok := s.authorize(w, r); ok {
+			fail(w, 404, "NOT_FOUND", "ไม่พบรายการที่ร้องขอ")
+		}
+	})
 	mux.Handle("/admin/", http.StripPrefix("/admin/", admin.Handler()))
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/", http.StatusSeeOther) })
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -244,6 +253,9 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		if (r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/")) && s.config.WebPolicy.IsLANHTTPURL(s.config.PublicURL) && !s.config.WebPolicy.AllowsLANRequest(r, s.config.PublicURL) {
 			fail(w, http.StatusForbidden, "LAN_HTTP_FORBIDDEN", "เข้า HTTP ผ่าน IP และเครือข่าย LAN ที่ผู้ดูแลอนุญาตโดยตรง")
+			return
+		}
+		if s.relayBusiness(w, r) {
 			return
 		}
 		mux.ServeHTTP(w, r)
@@ -525,8 +537,8 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		s.relayError(w, resp, true)
 		return
 	}
-	var value contracts.Token
-	if err = readEnvelope(resp, &value); err != nil {
+	value, envelope, err := readTokenExchange(resp)
+	if err != nil {
 		upstreamUnavailable(w)
 		return
 	}
@@ -545,7 +557,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	value.AccessToken = token
 	value.TokenType = "Bearer"
 	value.Scope = "mobile:read"
-	writeData(w, value)
+	envelope.write(w, value)
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) (Hospital, string, bool) {

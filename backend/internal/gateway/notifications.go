@@ -13,6 +13,19 @@ import (
 	"erp-platform/gateway/internal/contracts"
 )
 
+// Push delivery is a Gateway connection capability, separate from the ERP's
+// opaque notification history/read-state/summary business responses.
+func (s *Server) notificationDeviceCapabilities(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := s.authorize(w, r); !ok {
+		return
+	}
+	if r.URL.RawQuery != "" {
+		fail(w, 400, "INVALID_REQUEST", "คำขอไม่ถูกต้อง")
+		return
+	}
+	writeData(w, map[string]bool{"push_enabled": s.config.NotificationSender != nil})
+}
+
 func (s *Server) notificationHTTP(w http.ResponseWriter, r *http.Request) {
 	h, token, ok := s.authorize(w, r)
 	if !ok {
@@ -61,7 +74,11 @@ func (s *Server) notificationHTTP(w http.ResponseWriter, r *http.Request) {
 			s.relayError(w, resp, false)
 			return
 		}
-		var profile contracts.Profile
+		// Only authenticated identity is needed by the Gateway device protocol;
+		// do not couple FCM registration to the ERP business profile schema.
+		var profile struct {
+			ID json.RawMessage `json:"id"`
+		}
 		if readEnvelope(resp, &profile) != nil {
 			upstreamUnavailable(w)
 			return

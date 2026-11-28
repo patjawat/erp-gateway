@@ -281,15 +281,13 @@ func (s *Server) adminAction(w http.ResponseWriter, r *http.Request) {
 	if action == "test" {
 		resp, callErr := s.upstream(r.Context(), h, "GET", "/api/status", "", nil)
 		online := false
+		backendPath := ""
 		if callErr == nil {
 			if resp.StatusCode == 200 {
-				var status struct {
-					HospitalCode string `json:"hospital_code"`
-					APIVersion   string `json:"api_version"`
-					ERPReachable bool   `json:"erp_reachable"`
-				}
-				if readEnvelope(resp, &status) == nil {
-					online = status.HospitalCode == h.Code && status.APIVersion == "1" && status.ERPReachable
+				var status backendStatus
+				if readEnvelopeLimit(resp, &status, 8*1024) == nil {
+					backendPath, callErr = status.directoryPath(h)
+					online = callErr == nil
 				}
 			} else {
 				resp.Body.Close()
@@ -302,6 +300,9 @@ func (s *Server) adminAction(w http.ResponseWriter, r *http.Request) {
 				unavailable(w)
 			}
 			return
+		}
+		if online {
+			s.directoryBackends.remember(directoryBackendFingerprint(h, s.managementRevision), backendPath)
 		}
 	} else {
 		reason := ""
